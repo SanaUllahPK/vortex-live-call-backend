@@ -23,26 +23,18 @@ app.post("/api/analyze-live", async (req, res) => {
     }
 
     const message = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 200,
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 120,
       messages: [
         {
           role: "user",
-          content: `You are a professional sales representative. The supplier just said:
+          content: `You are a professional sales rep on a Discovery call. They just said:
 
 "${transcript}"
 
-You are on a Discovery call with this supplier (mission: ${missionType}).
-
-Generate EXACTLY what you should say next to them. Your response should be:
-- Professional and confident
-- Builds on what they just said
-- Asks a follow-up question OR moves the conversation forward
-- 1-3 sentences max
-
-IMPORTANT: Generate the EXACT words you should say - not a coaching tip. This is your response to them.`,
-        },
-      ],
+Generate EXACTLY what you should say next (1-2 sentences max). Be natural, confident, and ask a follow-up question.`
+        }
+      ]
     });
 
     const guidance =
