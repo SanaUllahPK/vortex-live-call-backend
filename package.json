@@ -1,0 +1,21 @@
+{
+  "name": "vortex-live-call-backend",
+  "version": "1.0.0",
+  "description": "Vortex Live Call System Backend",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "@anthropic-ai/sdk": "^0.16.0",
+    "@supabase/supabase-js": "^2.38.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
