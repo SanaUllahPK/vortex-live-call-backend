@@ -24,15 +24,23 @@ app.post("/api/analyze-live", async (req, res) => {
 
     const message = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 100,
+      max_tokens: 200,
       messages: [
         {
           role: "user",
-          content: `You are a sales coaching AI. The user is in a Discovery call with a potential supplier (mission: ${missionType}).
+          content: `You are a professional sales representative. The supplier just said:
 
-Their latest words: "${transcript}"
+"${transcript}"
 
-Give ONE short coaching tip (1 sentence, max 15 words). Focus on: rapport, listening, or discovering pain points.`,
+You are on a Discovery call with this supplier (mission: ${missionType}).
+
+Generate EXACTLY what you should say next to them. Your response should be:
+- Professional and confident
+- Builds on what they just said
+- Asks a follow-up question OR moves the conversation forward
+- 1-3 sentences max
+
+IMPORTANT: Generate the EXACT words you should say - not a coaching tip. This is your response to them.`,
         },
       ],
     });
@@ -45,7 +53,7 @@ Give ONE short coaching tip (1 sentence, max 15 words). Focus on: rapport, liste
     console.error("Claude API error:", error);
     res
       .status(500)
-      .json({ error: "Failed to generate guidance", details: error.message });
+      .json({ error: "Failed to generate response", details: error.message });
   }
 });
 
