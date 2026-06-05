@@ -16,10 +16,20 @@ app.get("/health", (req, res) => {
 
 app.post("/api/analyze-live", async (req, res) => {
   try {
-    const { transcript, missionType } = req.body;
+    const { transcript, missionType, conversationHistory } = req.body;
 
     if (!transcript) {
       return res.status(400).json({ error: "Transcript required" });
+    }
+
+    // Build context from conversation history
+    let context = "";
+    if (conversationHistory && conversationHistory.length > 0) {
+      context = "Previous conversation:\n";
+      conversationHistory.forEach(item => {
+        context += `${item.speaker === 'supplier' ? 'Supplier' : 'You'}: ${item.text}\n`;
+      });
+      context += "\n";
     }
 
     const message = await client.messages.create({
@@ -28,11 +38,13 @@ app.post("/api/analyze-live", async (req, res) => {
       messages: [
         {
           role: "user",
-          content: `You are a professional sales rep on a Discovery call. They just said:
+          content: `You are a professional sales rep on a Discovery call (mission: ${missionType}).
 
-"${transcript}"
+${context}
 
-Generate EXACTLY what you should say next (1-2 sentences max). Be natural, confident, and ask a follow-up question.`
+Supplier just said: "${transcript}"
+
+Generate EXACTLY what you should say next (1-2 sentences). Be natural, confident, and ask a follow-up question.`
         }
       ]
     });
