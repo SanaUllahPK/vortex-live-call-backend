@@ -10,287 +10,167 @@ const client = new Anthropic({
   apiKey: process.env.CLAUDE_API_KEY,
 });
 
-// VORTEX ORIGIN BRANDS - OFFICIAL DISCOVERY CALL COACHING BRIEF
 const VORTEX_BUSINESS_PROFILE = `
 === VORTEX ORIGIN BRANDS LLC ===
 
-COMPANY INFORMATION:
-- Legal Name: Vortex Origin Brands LLC
-- DBA: Northgate Mercantile
-- State of Registration: Wyoming, USA
-- Founder & Leader: Sanaullah
-- Role: Founder & Supplier Relationship Lead
-- Business Model: Wholesale Purchasing & Marketplace Operations
-- Primary Identity: WHOLESALE BUYER (not consultant, not agency)
-- Secondary Strength: Marketplace Operations & Growth Partnerships
+Company: Vortex Origin Brands, Wyoming-based wholesale company
+Founder: Sanaullah
+What We Do: Purchase inventory in bulk, work with suppliers across multiple categories
+Identity: Wholesale buyer, NOT consultant or agency
 
-WHAT WE DO:
-✓ Purchase inventory directly from brands at wholesale
-✓ Represent brands on e-commerce channels (Amazon, retail, distribution)
-✓ Provide brand protection and listing optimization
-✓ Invest capital in advertising and growth
-✓ Build long-term, reliable purchasing partnerships
+When answering "tell me about your company":
+"We're Vortex Origin Brands, a Wyoming-based wholesale company. We work with suppliers 
+and brands across multiple product categories and we're currently expanding our supplier 
+network. I came across your company and wanted to learn more about your wholesale program 
+and see if there might be a fit."
 
-WHAT WE ARE NOT:
-✗ Consultants
-✗ Agencies
-✗ Listing service providers
-✗ Marketing firms
-✗ Amazon-exclusive partners
-
-=== SANAULLAH'S COMMUNICATION STYLE ===
-
-How Sanaullah should sound:
-- Professional yet friendly
-- Natural and conversational
-- Easy to speak with
-- Non-pushy and patient
-- Relationship-first, always
-- Curious and genuinely interested
-- Confident but humble
-
-How Sanaullah should act:
-- Build trust BEFORE discussing business
-- Ask thoughtful, genuine questions
-- Listen carefully and deeply
-- Focus on understanding the supplier/partner
-- Avoid aggressive sales tactics
-- Be transparent about intentions
-- Show genuine interest in their success
-
-=== RELATIONSHIP FIRST RULE ===
-
-If a partner is engaged and talking openly:
-Do not rush to the next question.
-Instead:
-- Explore their answer deeper
-- Ask follow-up questions
-- Let them tell their story
-- Build rapport naturally
-
-A great discovery call feels like a conversation, not an interview.
-
-=== IF PARTNER IS SKEPTICAL ===
-
-Never defend immediately.
-Instead:
-1. Acknowledge the concern
-2. Ask a clarifying question
-3. Understand the reason behind the concern
-4. Continue discovery
-
-Example:
-
-Partner: "We've had bad experiences with wholesalers."
-
-Response: "That's completely understandable. Would you mind sharing what happened?"
-
-Learn first. Defend later.
-
-=== DISCOVERY CALL SUCCESS CRITERIA ===
-
-SUCCESS means:
-✓ Understanding their business deeply
-✓ Identifying key decision makers
-✓ Learning their partnership requirements
-✓ Understanding their approval process
-✓ Building genuine trust and rapport
-✓ Securing a clear next step with timeline
-
-SUCCESS DOES NOT mean:
-✗ Closing a deal on this call
-✗ Negotiating pricing
-✗ Requesting exclusivity
-✗ Pushing for immediate approval
-✗ Discussing detailed implementation
-
-THE BEST NEXT RESPONSE IS USUALLY:
-- A thoughtful follow-up question
-- Clarification of something they said
-- Deeper exploration of a challenge
-
-Not a pitch. Discovery first. Solutions later.
+Discovery comes FIRST. Pitching comes LATER.
 `;
 
-// CALL TYPE SPECIFIC COACHING - BASED ON SANAULLAH'S ACTUAL EMAIL TEMPLATES
+// DISTRIBUTOR-SPECIFIC DISCOVERY PRIORITIES
+const DISCOVERY_PRIORITIES = {
+  distributor_inquiry: {
+    level_1_must_learn: [
+      "Do they accept new wholesale accounts?",
+      "What's their MOQ (Minimum Order Quantity)?",
+      "Do they require a reseller certificate or business license?",
+      "What's their application/approval process?",
+      "How long does approval typically take?",
+      "What brands/product categories do they carry?"
+    ],
+    level_2_good_to_learn: [
+      "What's their shipping policy?",
+      "What payment terms do they offer?",
+      "Do they have MAP (Minimum Advertised Price) restrictions?",
+      "Do they restrict sales on Amazon?",
+      "Are there territory restrictions?",
+      "What documentation do they require from new buyers?"
+    ],
+    level_3_later: [
+      "Volume discounts available?",
+      "Special promotional programs?",
+      "Exclusive brand arrangements?",
+      "Return/restocking policies?"
+    ]
+  }
+};
+
+// CALL TYPE GUIDES - UPDATED WITH BETTER STRUCTURE
 const CALL_TYPE_GUIDES = {
   quick_note: `
 === QUICK NOTE / WHOLESALE ACCOUNT INQUIRY ===
 
-Context: You're reaching out to brands you want to BUY FROM at wholesale.
-Email reference: "Wholesale Inquiry A & B" + "Quick Note (Brand Already on Amazon)"
+Target: Brands you want to buy from at wholesale
+Email type: "Wholesale Inquiry A & B"
 
-Objective: Explore becoming an authorized wholesale reseller. Understand if they're open to wholesale partnerships.
+YOUR ROLE: You're a buyer seeking to establish a wholesale purchasing relationship.
 
-This is about: "We want to purchase your inventory directly and represent your brand properly on Amazon and other channels."
+OPENING SCRIPT:
+"Hey [Name], thanks for picking up. I'm Sanaullah with Vortex Origin Brands—we're a 
+Wyoming-based wholesale company. We work with suppliers across multiple product categories 
+and we're expanding our supplier network. Do you handle wholesale accounts, or is there 
+someone on your team I should be talking to?"
 
-Strategy:
-- You're a BUYER, not a consultant
-- You want to establish a purchasing relationship
-- You invest your capital in ads, brand protection, listings
-- They benefit from consistent orders and proper brand representation
+KEY DISCOVERY AREAS:
+- Do they work with wholesale partners?
+- What's their approval process?
+- What do they require from new wholesale accounts?
+- Who makes partnership decisions?
+- What's their MOQ/volume expectations?
 
-Key Discovery Topics:
-- "Do you currently work with wholesale partners?"
-- "What qualities do you look for in a wholesale partner?"
-- "How do you typically evaluate new wholesale accounts?"
-- "What's your approval process for new wholesale partners?"
-- "Who is involved in wholesale partnership decisions?"
-- "How do you typically handle inventory allocation?"
-- "What does your ideal wholesale partner look like?"
-
-What to emphasize:
-✓ "We purchase inventory directly"
-✓ "We become a long-term, reliable wholesale partner"
-✓ "We invest in proper brand representation"
-✓ "We start with reasonable order volumes and scale based on performance"
-✓ "We represent the brand properly on all channels"
-
-What NOT to mention yet:
-✗ Specific pricing or terms
-✗ Amazon as the ONLY opportunity
-✗ How you'll manage their Amazon (save for later)
-✗ Exclusivity
-
-Success: They're interested in discussing wholesale partnership terms and next steps.
+TONE: Respectful buyer, not desperate. You're evaluating if they're a fit.
   `,
-  
+
   brand_registry: `
 === BRAND REGISTRY / AMAZON PROTECTION ===
 
-Context: Brands that ARE on Amazon but unprotected, messy, or with unauthorized sellers.
-Email reference: "For Brands Not Yet in Brand Registry" + "Quick note on Amazon Channel"
+Target: Brands with unprotected Amazon presence
+Email type: "For Brands Not Yet in Brand Registry"
 
-Objective: Help them see the Amazon opportunity clearly. Understand their current situation and challenges.
+YOUR ROLE: You're a wholesale buyer offering to manage their Amazon channel properly.
 
-This is about: "Your brand on Amazon is unprotected/messy. We can fix that AND become your wholesale partner."
+OPENING SCRIPT:
+"Hey [Name], thanks for taking the call. I'm Sanaullah with Vortex Origin Brands. 
+I came across your products on Amazon and noticed you've got multiple third-party sellers 
+offering them—which is pretty common. I run a wholesale operation, and part of what we do 
+is help brands protect and properly represent themselves on Amazon. Do you have a few minutes?"
 
-Strategy:
-- Lead with AMAZON problem they may not realize they have
-- Pitch SOLUTION: Brand Registry protection + listing optimization + ads
-- Position yourself as the partner who will MANAGE their Amazon channel
-- Emphasize: We invest capital, we manage the channel, they get consistent orders + revenue
+KEY DISCOVERY AREAS:
+- Do they have Brand Registry set up?
+- Who manages their Amazon currently?
+- Are they aware of unauthorized sellers?
+- What's their biggest Amazon challenge?
+- Do they want to protect their brand on Amazon?
 
-Key Discovery Topics:
-- "Have you set up Amazon Brand Registry?"
-- "Are you currently managing your Amazon channel directly?"
-- "How do you handle unauthorized sellers on Amazon?"
-- "What's your biggest challenge with your Amazon presence?"
-- "How much time do you spend managing your Amazon listings?"
-- "Are you running Amazon ads currently?"
-- "What's your goal for Amazon revenue in the next 12 months?"
-- "Who manages your Amazon strategy?"
-
-What to emphasize:
-✓ "Multiple third-party sellers can dilute your brand"
-✓ "Brand Registry protects you and controls who sells"
-✓ "We optimize listings to increase visibility"
-✓ "We run advertising using our capital"
-✓ "We become your wholesale partner AND manage Amazon"
-
-What NOT to mention yet:
-✗ Specific fees or costs
-✗ Exact strategies you'll use
-✗ Percentage revenue you'll generate
-✗ Other brands you work with (confidentiality)
-
-Success: They see the Amazon opportunity clearly and want to explore how you can help manage it while becoming their wholesale partner.
+TONE: Helpful expert who sees an opportunity they may have missed.
   `,
-  
+
   retail_inquiry: `
-=== RETAIL INQUIRY (AMAZON-ALLERGIC BRANDS) ===
+=== RETAIL INQUIRY (AMAZON-ALLERGIC) ===
 
-Context: Brands that are AMAZON-AVERSE or AMAZON-PHOBIC. They don't want anything to do with Amazon.
-Email reference: "Non-Amazon (Safe / Neutral Retail Angle) A & B"
+Target: Brands that don't want Amazon
+Email type: "Non-Amazon (Safe Retail Angle)"
 
-**CRITICAL RULE: NEVER MENTION AMAZON UNLESS THEY BRING IT UP FIRST.**
+**CRITICAL: NEVER mention Amazon unless they bring it up.**
 
-Objective: Position yourself as a reliable RETAIL PURCHASING PARTNER, not an Amazon seller.
+YOUR ROLE: You're a retail buyer/distributor seeking wholesale accounts.
 
-This is about: "We're an e-commerce/retail business that wants to buy your products and represent you properly on retail channels."
+OPENING SCRIPT:
+"Hey [Name], thanks for your time. I'm Sanaullah with Vortex Origin Brands—we're a 
+Wyoming-based retail and distribution business. We work with a select group of suppliers 
+and focus on consistent, reliable ordering and proper brand representation. I came across 
+your company and was impressed. Do you work with wholesale partners?"
 
-Strategy:
-- Position as: "e-commerce retail business" or "distribution company"
-- Focus on: Consistent ordering, proper brand representation, long-term relationships
-- Avoid: Any mention of Amazon, marketplaces, brand registry, listings, ads
-- If they mention Amazon concerns: "We respect that. Our focus is on [other channels]."
+KEY DISCOVERY AREAS:
+- How do they currently distribute?
+- What channels do they focus on?
+- Do they work with retail/wholesale partners?
+- What's their ideal retail partner?
+- Who makes partnership decisions?
 
-Key Discovery Topics:
-- "How do you currently distribute your products?"
-- "What channels do you focus on?"
-- "Do you work with other retailers or wholesalers?"
-- "What's been your experience with retail partnerships?"
-- "What qualities do you look for in a retail partner?"
-- "How do you handle brand representation across channels?"
-- "What's your growth strategy outside of [their current channels]?"
-- "Who makes decisions on new retail partnerships?"
-
-What to emphasize:
-✓ "We're an e-commerce retail business"
-✓ "We purchase inventory directly from brands"
-✓ "We focus on proper brand representation"
-✓ "We become reliable, long-term purchasing partners"
-✓ "We respect your brand guidelines and MAP pricing"
-✓ "We start with reasonable orders and scale based on performance"
-
-What NEVER to mention:
-✗ Amazon
-✗ Marketplaces
-✗ Brand Registry
-✗ Listing optimization
-✗ Amazon advertising
-✗ Third-party sellers
-✗ Any Amazon-related language
-
-If they mention Amazon concerns:
-"I understand. Our focus is on [other channels they care about]. We respect your distribution strategy."
-
-Success: They see you as a legitimate retail purchasing partner, not an Amazon seller trying to sneak in.
+TONE: Legitimate retail buyer, respectful of their distribution strategy.
   `,
-  
+
   distributor_inquiry: `
 === DISTRIBUTOR INQUIRY (YOU'RE THE BUYER) ===
 
-Context: You're approaching DISTRIBUTORS to buy FROM them. They're your suppliers, you're their buyer.
-Email reference: "Opening wholesale account with Distributor A & B"
+Target: Distributors/suppliers you want to buy FROM
+Email type: "Opening wholesale account with Distributor"
 
-Objective: Explore opening a wholesale account with them. Understand their requirements and process.
+YOUR ROLE: You're a growing wholesale buyer seeking to open accounts with suppliers.
 
-This is about: "We're a growing retail/distribution business. We want to buy inventory from you at wholesale."
+OPENING SCRIPT:
+"Hey [Name], thanks for picking up. I'm Sanaullah with Vortex Origin Brands—we're a 
+Wyoming-based wholesale company. We're currently expanding our supplier network across 
+multiple product categories, and I came across your company. Before I take up too much 
+of your time, what does your typical process look like for setting up a new wholesale account?"
 
-Strategy:
-- You're the BUYER (not a charity case)
-- You're growing and expanding
-- You place CONSISTENT, REPEAT orders
-- You have REAL capital to invest
-- You scale based on performance
-- You follow their terms and MOQs
+DISCOVERY PRIORITY LEVEL 1 (MUST LEARN):
+☐ Do they accept new wholesale accounts?
+☐ What's their MOQ?
+☐ Reseller certificate required?
+☐ Application process?
+☐ Approval timeline?
+☐ What brands/categories do they carry?
 
-Key Discovery Topics:
-- "What's your process for opening a wholesale account?"
-- "What are your minimum order requirements (MOQ/MOV)?"
-- "Do you have a product catalog and price list available?"
-- "What's your typical process for new wholesale buyers?"
-- "How long does it take to set up an account?"
-- "Are there any business documentation you require?"
-- "What payment terms do you typically offer?"
-- "Do you have key brands or product lines that are moving well?"
+DISCOVERY PRIORITY LEVEL 2 (GOOD TO LEARN):
+☐ Shipping policy?
+☐ Payment terms?
+☐ MAP restrictions?
+☐ Amazon restrictions?
+☐ Territory restrictions?
+☐ Documentation required?
 
-What to emphasize:
-✓ "We're a Wyoming-based retail and distribution business"
-✓ "We purchase inventory in bulk"
-✓ "We start with $2,000-$5,000 orders and scale based on performance"
-✓ "We're looking for reliable, long-term supplier relationships"
-✓ "We focus on consistent, repeat purchasing"
-✓ "We're expanding our product portfolio"
+DISCOVERY PRIORITY LEVEL 3 (LATER):
+- Volume discounts
+- Promotional programs
+- Exclusives
+- Return policies
 
-What NOT to mention:
-✗ Amazon (unless they ask)
-✗ Anything that makes you sound small or new
-✗ Uncertainty about your buying power
-✗ Inability to meet MOQs
+TONE: Professional buyer. You have buying power. You're evaluating if they're a good fit.
 
-Success: They share their account opening process, requirements, and you're moving toward establishing a wholesale account relationship.
+NEXT OBJECTIVE AFTER OPENING:
+Learn their approval process and requirements.
   `
 };
 
@@ -306,28 +186,25 @@ app.post("/api/analyze-live", async (req, res) => {
       return res.status(400).json({ error: "Transcript required" });
     }
 
-    // Build context from conversation history
     let context = "";
     if (conversationHistory && conversationHistory.length > 0) {
       context = "Conversation so far:\n";
       conversationHistory.forEach(item => {
-        context += `${item.speaker === 'supplier' ? 'Partner' : 'Sanaullah'}: ${item.text}\n`;
+        context += `${item.speaker === 'supplier' ? 'Contact' : 'Sanaullah'}: ${item.text}\n`;
       });
       context += "\n";
     }
 
-    // Build brief context
     let briefContext = "";
     if (brief && brief.trim()) {
       briefContext = `CALL BRIEF:\n${brief}\n\n`;
     }
 
-    // Get call type guide
     const callTypeGuide = CALL_TYPE_GUIDES[callType] || CALL_TYPE_GUIDES.quick_note;
 
     const message = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 200,
+      max_tokens: 300,
       messages: [
         {
           role: "user",
@@ -335,21 +212,23 @@ app.post("/api/analyze-live", async (req, res) => {
 
 ${callTypeGuide}
 
-${briefContext}${context}Partner just said: "${transcript}"
+${briefContext}${context}Contact just said: "${transcript}"
 
-Coach Sanaullah on what to say next (1-2 sentences max).
-Keep it natural, conversational, and relationship-focused.
-Show genuine interest in understanding their business.
+Generate coaching in this exact format:
 
-The best response is usually:
-- A thoughtful follow-up question
-- Clarification of something they said
-- Deeper exploration of a challenge
+NEXT OBJECTIVE:
+[What's the goal right now? What do you need to learn next?]
 
-Not a pitch.
+WHY THIS MATTERS:
+[Why is learning this important?]
 
-Do NOT pitch services, push for approval, or negotiate.
-Remember: Discovery first. Solutions later.`
+SUGGESTED QUESTION:
+[The actual question Sanaullah should ask]
+
+COACHING NOTES:
+[Any tone/approach tips]
+
+Keep suggested question to 1-2 sentences. Be conversational, not robotic.`
         }
       ]
     });
