@@ -16,7 +16,7 @@ app.get("/health", (req, res) => {
 
 app.post("/api/analyze-live", async (req, res) => {
   try {
-    const { transcript, missionType, conversationHistory } = req.body;
+    const { transcript, missionType, conversationHistory, brief } = req.body;
 
     if (!transcript) {
       return res.status(400).json({ error: "Transcript required" });
@@ -32,19 +32,23 @@ app.post("/api/analyze-live", async (req, res) => {
       context += "\n";
     }
 
+    // Build brief context
+    let briefContext = "";
+    if (brief && brief.trim()) {
+      briefContext = `CALL BRIEF & STRATEGY:\n${brief}\n\n`;
+    }
+
     const message = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 120,
       messages: [
         {
           role: "user",
-          content: `You are a professional sales rep on a Discovery call (mission: ${missionType}).
+          content: `You are a professional sales rep on a Discovery call.
 
-${context}
+${briefContext}${context}Supplier just said: "${transcript}"
 
-Supplier just said: "${transcript}"
-
-Generate EXACTLY what you should say next (1-2 sentences). Be natural, confident, and ask a follow-up question.`
+Generate EXACTLY what you should say next (1-2 sentences max). Follow the call brief. Be natural and confident.`
         }
       ]
     });
