@@ -49,42 +49,10 @@ const loadSupplierMemory = async (supplierUuid) => {
   } catch (error) {return null;}
 };
 
-const saveIncrementalMemory = async (supplierUuid, updates) => {
-  if (!supplierUuid) return null;
-  try {
-    const { data, error } = await supabase.from("supplier_memory").update({...updates, updated_at: new Date().toISOString()}).eq("id", supplierUuid).select().single();
-    if (error) return null;
-    supplierMemory.set(supplierUuid, data);
-    return data;
-  } catch (error) {return null;}
-};
-
 const updateSupplierMemoryFull = async (supplierUuid, updates) => {
   if (!supplierUuid) return null;
   try {
     const safeUpdates = { ...updates };
-    if (updates.open_questions) {
-      const current = await loadSupplierMemory(supplierUuid);
-      if (current?.open_questions) {
-        safeUpdates.open_questions = Array.from(new Set([...(current.open_questions || []), ...(updates.open_questions || [])]));
-      }
-    }
-    if (updates.last_call_summary) {
-      const current = await loadSupplierMemory(supplierUuid);
-      const previous = [...(current?.previous_call_summaries || [])];
-      previous.push(updates.last_call_summary);
-      if (previous.length > 10) previous.shift();
-      safeUpdates.previous_call_summaries = previous;
-    }
-    if (updates.trust_score !== undefined) {
-      safeUpdates.trust_history = {timestamp: new Date().toISOString(), score: updates.trust_score, reason: updates.trust_reason || "Score updated"};
-    }
-    if (updates.call_type && updates.call_summary) {
-      const current = await loadSupplierMemory(supplierUuid);
-      const history = current?.interaction_history || [];
-      history.push({date: new Date().toISOString().split('T')[0], call_type: updates.call_type, summary: updates.call_summary, timestamp: new Date().toISOString()});
-      safeUpdates.interaction_history = history;
-    }
     safeUpdates.updated_at = new Date().toISOString();
     const { data, error } = await supabase.from("supplier_memory").update(safeUpdates).eq("id", supplierUuid).select().single();
     if (error) return null;
@@ -93,208 +61,167 @@ const updateSupplierMemoryFull = async (supplierUuid, updates) => {
   } catch (error) {return null;}
 };
 
-const getConfidenceTier = (sampleSize) => {
-  if (sampleSize < 10) return 'Experimental';
-  if (sampleSize < 20) return 'Emerging Pattern';
-  if (sampleSize < 50) return 'Validated Pattern';
-  if (sampleSize < 100) return 'Strong Pattern';
-  return 'Proven Pattern';
-};
+const SYSTEM_PROMPT = `
+You are a Supplier Intelligence Analyst for Vortex Origin Brands (a legitimate wholesale buyer).
 
-const isConfidenceHighEnough = (sampleSize) => sampleSize >= 20;
+YOUR ROLE:
+Analyze supplier conversations and provide business intelligence to help Vortex evaluate and manage supplier relationships. You provide analysis and recommendations - the user decides what to do.
 
-const extractSupplierCategory = (memory, transcript) => {
-  if (memory?.supplier_category) return memory.supplier_category;
-  const categories = ['Beauty', 'Personal Care', 'Electronics', 'Home Goods', 'Pet', 'Health', 'Sports', 'Food', 'Supplements', 'Apparel'];
-  const nameUpper = memory?.company_name?.toUpperCase() || '';
-  for (const cat of categories) {if (nameUpper.includes(cat.toUpperCase())) return cat;}
-  return 'Uncategorized';
-};
+YOU DO NOT:
+- Generate scripts or tell the user what to say
+- Impersonate or negotiate on behalf of Vortex
+- Make commitments on behalf of Vortex
+- Suggest false or deceptive claims
 
-const updateCategoryIntelligence = async (category, callOutcome) => {
-  const { data: existing } = await supabase.from('category_intelligence').select('*').eq('category', category).single();
-  const current = existing || {category, total_calls: 0, approval_rate: 0, rejection_rate: 0, most_common_objections: [], most_common_restrictions: [], avg_trust_growth: 0, sample_size: 0, recent_call_count: 0, historical_call_count: 0};
-  const updates = {total_calls: current.total_calls + 1, sample_size: current.sample_size + 1, recent_call_count: (current.recent_call_count || 0) + 1, updated_at: new Date().toISOString(), last_seen: new Date().toISOString()};
-  if (callOutcome.mission_complete || callOutcome.is_fit_for_account === 'yes') {
-    updates.approval_rate = (current.approval_rate * current.total_calls + 1) / (current.total_calls + 1);
-  } else if (callOutcome.is_fit_for_account === 'no') {
-    updates.rejection_rate = (current.rejection_rate * current.total_calls + 1) / (current.total_calls + 1);
-  }
-  if (callOutcome.known_objections && callOutcome.known_objections.length > 0) {
-    const objections = current.most_common_objections || [];
-    callOutcome.known_objections.forEach(obj => {
-      const found = objections.find(o => o.text === obj);
-      if (found) {found.count = (found.count || 1) + 1;} else {objections.push({ text: obj, count: 1 });}
-    });
-    updates.most_common_objections = objections.sort((a, b) => (b.count || 0) - (a.count || 0)).slice(0, 10);
-  }
-  if (callOutcome.red_flags && callOutcome.red_flags.length > 0) {
-    const restrictions = current.most_common_restrictions || [];
-    callOutcome.red_flags.forEach(flag => {
-      const found = restrictions.find(r => r.text === flag);
-      if (found) {found.count = (found.count || 1) + 1;} else {restrictions.push({ text: flag, count: 1 });}
-    });
-    updates.most_common_restrictions = restrictions.sort((a, b) => (b.count || 0) - (a.count || 0)).slice(0, 10);
-  }
-  updates.confidence_level = getConfidenceTier(updates.sample_size);
-  updates.first_seen = existing?.first_seen || new Date().toISOString();
-  const { error } = existing ? await supabase.from('category_intelligence').update(updates).eq('category', category) : await supabase.from('category_intelligence').insert([{ ...current, ...updates }]);
-  if (error) console.error('Error updating category intelligence:', error);
-};
+YOU DO:
+- Identify information collected and missing
+- Detect objections, risks, and red flags
+- Identify trust and relationship signals
+- Recommend professional discovery questions
+- Recommend next objectives based on business logic
+- Provide business intelligence
 
-const recordQuestionUsage = async (question, responseLength, engagementChange, trustChange, relationshipProgression, resistanceTriggered) => {
-  const { data: existing } = await supabase.from('question_tracking').select('*').eq('question_text', question).single();
-  const current = existing || {question_text: question, times_used: 0, avg_response_length: 0, engagement_change: 0, trust_change: 0, relationship_progression: 0, resistance_triggered_count: 0, sample_size: 0, recent_call_count: 0};
-  const updates = {times_used: current.times_used + 1, sample_size: current.sample_size + 1, recent_call_count: (current.recent_call_count || 0) + 1, avg_response_length: (current.avg_response_length * current.times_used + responseLength) / (current.times_used + 1), engagement_change: (current.engagement_change * current.times_used + engagementChange) / (current.times_used + 1), trust_change: (current.trust_change * current.times_used + trustChange) / (current.times_used + 1), relationship_progression: (current.relationship_progression * current.times_used + relationshipProgression) / (current.times_used + 1), updated_at: new Date().toISOString(), last_seen: new Date().toISOString()};
-  if (resistanceTriggered) updates.resistance_triggered_count = current.resistance_triggered_count + 1;
-  const responseQuality = Math.min(responseLength / 200, 1);
-  const trustImpact = Math.max(-1, Math.min(1, trustChange / 2));
-  const progressionImpact = Math.max(-1, Math.min(1, relationshipProgression / 5));
-  const resistanceImpact = resistanceTriggered ? -0.3 : 0;
-  updates.effectiveness_score = (responseQuality * 0.3 + trustImpact * 0.35 + progressionImpact * 0.25 + resistanceImpact * 0.1);
-  updates.confidence_level = getConfidenceTier(updates.sample_size);
-  updates.first_seen = existing?.first_seen || new Date().toISOString();
-  const { error } = existing ? await supabase.from('question_tracking').update(updates).eq('id', existing.id) : await supabase.from('question_tracking').insert([{ ...current, ...updates }]);
-  if (error) console.error('Error recording question:', error);
-};
+FOR EACH SUPPLIER MESSAGE, PROVIDE ANALYSIS:
 
-const extractCategoryHierarchy = async (supplierId, companyName, transcript, callSummary) => {
-  const categoryHierarchies = {
-    'Beauty': {subcategories: ['Skincare', 'Makeup', 'Haircare', 'Fragrance'], keywords: ['makeup', 'cosmetics', 'skincare', 'moisturizer', 'serum', 'lipstick', 'foundation', 'shampoo', 'conditioner', 'perfume']},
-    'Personal Care': {subcategories: ['Oral', 'Bath', 'Deodorant', 'Grooming'], keywords: ['toothpaste', 'soap', 'deodorant', 'lotion', 'shaving', 'grooming', 'razor']},
-    'Health': {subcategories: ['Supplements', 'Vitamins', 'Wellness', 'Medical'], keywords: ['supplement', 'vitamin', 'health', 'wellness', 'medical', 'collagen', 'fish oil']},
-  };
-  const transcriptLower = transcript?.toLowerCase() || '';
-  const summaryLower = JSON.stringify(callSummary || {}).toLowerCase();
-  const nameUpper = companyName?.toUpperCase() || '';
-  const allText = `${transcriptLower} ${summaryLower}`;
-  let primaryCategory = null;
-  let subcategory = null;
-  const detectedProducts = [];
-  const scores = {};
-  Object.entries(categoryHierarchies).forEach(([category, data]) => {
-    scores[category] = 0;
-    data.keywords.forEach(keyword => {if (allText.includes(keyword)) {scores[category] += 2; detectedProducts.push(keyword);}});
-    if (nameUpper.includes(category.toUpperCase())) scores[category] += 5;
-  });
-  let maxScore = 0;
-  Object.entries(scores).forEach(([cat, score]) => {if (score > maxScore) {maxScore = score; primaryCategory = cat;}});
-  if (!primaryCategory) primaryCategory = 'Uncategorized';
-  const { data: cached } = await supabase.from('supplier_category_cache').select('*').eq('supplier_id', supplierId).single();
-  const updates = {primary_category: primaryCategory, subcategory: subcategory || 'General', products: Array.from(new Set(detectedProducts)).slice(0, 10), detected_category: primaryCategory, confidence: Math.min(100, maxScore * 10), last_detected: new Date().toISOString()};
-  const { error } = cached ? await supabase.from('supplier_category_cache').update(updates).eq('supplier_id', supplierId) : await supabase.from('supplier_category_cache').insert([{ supplier_id: supplierId, ...updates }]);
-  if (error) console.error('Error caching category hierarchy:', error);
-  return { primary: primaryCategory, sub: subcategory, products: detectedProducts };
-};
+**CURRENT STAGE:** [Where in the relationship are we? Prospect → Contact → Interested → Approved]
+**TRUST LEVEL:** [Estimated 1-10 based on signals]
+**COLLECTED:** [✓ What information did we learn?]
+**MISSING:** [□ What critical info is still unknown?]
+**RISK FLAGS:** [Any red flags or concerns?]
+**SUPPLIER SIGNALS:** [Positive/negative indicators from supplier]
+**NEXT OBJECTIVE:** [What's the highest priority next step?]
+**RECOMMENDED DISCOVERY QUESTIONS:** [2-3 professional questions to ask]
+**FOLLOW-UP AREAS:** [What areas to explore further?]
 
-const formatMemoryForPrompt = (memory) => {
-  if (!memory) return "No supplier memory found.";
-  return `SUPPLIER MEMORY:\nSupplier: ${memory.company_name || memory.supplier_id}\nCategory: ${memory.supplier_category || 'Uncategorized'}\nStage: ${memory.relationship_stage}\nTrust Score: ${memory.trust_score}/10\nLast Contact: ${memory.last_contact_date || 'Never'}\nKNOWN: ${Object.entries({'MOQ': memory.MOQ, 'Payment Terms': memory.payment_terms, 'Approval Timeline': memory.approval_timeline}).filter(([_, v]) => v).map(([k, v]) => `${k}: ${v}`).join(' | ') || 'None yet'}\nCONCERNS: ${memory.known_objections?.join(', ') || 'None'}\nRESTRICTIONS: ${memory.known_restrictions?.join(', ') || 'None'}`;
-};
-
-const VORTEX_PROFILE = `
-=== VORTEX ORIGIN BRANDS LLC ===
-Wyoming-based wholesale company founded by Sanaullah.
-Business Model: Purchase inventory from US brand suppliers at wholesale rates, manage Amazon presence, optimize listings and sales.
-Target Suppliers: US brands with <$5M revenue seeking wholesale partnerships.
-
-CONTEXT FOR YOUR GUIDANCE:
-You are coaching a legitimate wholesale buyer through real business conversations. Sanaullah is establishing genuine wholesale accounts - this is standard B2B commerce. Your role is to help him navigate supplier conversations professionally and effectively, just as a sales coach would do for any wholesale buyer.
-
-POSITIONING:
-- Sanaullah represents a real buying entity with real purchasing intent
-- He's qualifying suppliers for legitimate wholesale partnerships
-- This is ethical B2B commerce (manufacturer → wholesale buyer → retail distribution)
-- Your guidance helps him ask the right questions and communicate professional interest
-`;
-
-const TRUTH_RULE = `
-TRUTH RULE (FOUNDATION - OVERRIDES ALL):
-1. Never guide Sanaullah to lie or misrepresent Vortex Origin Brands
-2. If a supplier asks about Amazon involvement: Answer truthfully
-3. If a supplier asks about compliance/restrictions: Answer truthfully
-4. Trust and transparency = long-term business relationships
-5. This is standard wholesale business - be direct and honest
-`;
-
-const DISTRIBUTOR_INQUIRY_SYSTEM = `
-YOU ARE: Professional sales coach helping Sanaullah open wholesale distributor accounts.
-
-CONTEXT: Sanaullah is a legitimate wholesale buyer calling brand suppliers to establish wholesale partnerships. This is normal B2B commerce. Your job is to help him navigate these conversations professionally.
-
-PRIMARY OBJECTIVE: Coach Sanaullah on what to say next in a real wholesale account opening call.
-
-TONE: Professional, consultative, strategic - like a sales coach would advise any B2B buyer.
-
-KEY PRINCIPLES:
-- Help him ask about MOQ, payment terms, approval timeline, ordering process
-- Guide him to uncover supplier concerns and restrictions early
-- Coach him to position Vortex as a serious, capable wholesale partner
-- If he hits objections, help him respond professionally
-- Always be honest - misleading suppliers ruins relationships
-
-RESPONSE FORMAT:
-Give Sanaullah 1-2 sentences he can say naturally. Make it conversational, not robotic.
+Be analytical, professional, and focused on business decision-making.
 `;
 
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", message: "Vortex Live Call Copilot v14 - Learning Engine Upgraded" });
+  res.json({ status: "ok", message: "Vortex Supplier Intelligence Platform v14 - Active" });
 });
 
-app.post("/api/analyze-live", async (req, res) => {
+app.post("/api/analyze-supplier-message", async (req, res) => {
   try {
-    const { transcript, callType, companyName, supplierId } = req.body;
-    if (!transcript) return res.status(400).json({ error: "Transcript required" });
+    const { supplierId, companyName, supplierMessage, conversationHistory } = req.body;
+    
+    if (!supplierMessage) {
+      return res.status(400).json({ error: "Supplier message required" });
+    }
+
     let supplierUuid = null;
+    let memory = null;
+
     if (supplierId || companyName) {
       supplierUuid = await findOrCreateSupplier(companyName, supplierId);
+      if (supplierUuid) {
+        memory = await loadSupplierMemory(supplierUuid);
+      }
     }
+
+    const memoryContext = memory ? `EXISTING SUPPLIER MEMORY:\n${JSON.stringify(memory, null, 2)}` : "No prior memory for this supplier.";
+    
+    const historyContext = conversationHistory && conversationHistory.length > 0 
+      ? `CONVERSATION SO FAR:\n${conversationHistory.map(item => `${item.speaker === 'you' ? 'VORTEX' : 'SUPPLIER'}: ${item.text}`).join('\n')}`
+      : "First message from supplier.";
+
     const message = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 500,
+      max_tokens: 1000,
       messages: [{
         role: "user",
-        content: `${TRUTH_RULE}\n${VORTEX_PROFILE}\n${DISTRIBUTOR_INQUIRY_SYSTEM}\nContact just said: "${transcript}"\nYou are Sanaullah's live call copilot. Tell him what to say next (max 2 sentences).`
+        content: `${SYSTEM_PROMPT}
+
+${memoryContext}
+
+${historyContext}
+
+LATEST SUPPLIER MESSAGE: "${supplierMessage}"
+
+Provide intelligence analysis in the format specified.`
       }]
     });
-    const guidance = message.content[0].type === "text" ? message.content[0].text : "";
-    res.json({ guidance, timestamp: new Date().toISOString(), callType, supplierId: supplierUuid });
+
+    const analysis = message.content[0].type === "text" ? message.content[0].text : "";
+
+    if (supplierUuid && memory) {
+      await updateSupplierMemoryFull(supplierUuid, {
+        last_contact_date: new Date().toISOString(),
+        interaction_history: [
+          ...(memory.interaction_history || []),
+          {
+            date: new Date().toISOString().split('T')[0],
+            message: supplierMessage,
+            analysis: analysis.substring(0, 500)
+          }
+        ].slice(-20)
+      });
+    }
+
+    res.json({ 
+      analysis,
+      timestamp: new Date().toISOString(),
+      companyName,
+      supplierId: supplierUuid
+    });
   } catch (error) {
-    console.error("Claude API error:", error);
-    res.status(500).json({ error: "Failed to generate response", details: error.message });
+    console.error("Analysis error:", error);
+    res.status(500).json({ error: "Failed to analyze message", details: error.message });
   }
 });
 
 app.post("/api/call-summary", async (req, res) => {
   try {
     const { conversationHistory, callType, supplierId, companyName } = req.body;
-    if (!conversationHistory || conversationHistory.length === 0) return res.status(400).json({ error: "Conversation history required" });
+
+    if (!conversationHistory || conversationHistory.length === 0) {
+      return res.status(400).json({ error: "Conversation history required" });
+    }
+
     let transcript = "";
-    conversationHistory.forEach(item => {transcript += `${item.speaker === 'contact' ? 'CONTACT' : 'YOU'}: ${item.text}\n\n`;});
+    conversationHistory.forEach(item => {
+      transcript += `${item.speaker === 'contact' ? 'SUPPLIER' : 'VORTEX'}: ${item.text}\n\n`;
+    });
+
     const message = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 800,
       messages: [{
         role: "user",
-        content: `Analyze this call. Return ONLY JSON.\n${transcript}\n{"call_type":"${callType}","overall_score":8,"relationship_summary":"Good fit","is_fit_for_account":"yes"}`
+        content: `Analyze this complete supplier conversation and provide a summary. Return JSON.
+
+${transcript}
+
+Provide JSON with:
+{
+  "call_type": "${callType}",
+  "overall_assessment": "brief summary",
+  "information_collected": ["list of key info gathered"],
+  "critical_gaps": ["what's still unknown"],
+  "risk_flags": ["any concerns"],
+  "positive_signals": ["encouraging indicators"],
+  "recommended_next_steps": ["2-3 specific actions"],
+  "trust_assessment": 1-10,
+  "relationship_stage": "Prospect|Contact|Interested|Approved"
+}`
       }]
     });
+
     const responseText = message.content[0].type === "text" ? message.content[0].text : "{}";
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     const summary = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+
     if (supplierId || companyName) {
       const supplierUuid = await findOrCreateSupplier(companyName, supplierId);
       if (supplierUuid) {
         await updateSupplierMemoryFull(supplierUuid, {
-          relationship_summary: summary.relationship_summary,
           last_call_summary: summary,
-          call_type: callType,
+          relationship_stage: summary.relationship_stage,
+          trust_score: summary.trust_assessment,
+          last_contact_date: new Date().toISOString()
         });
-        await updateCategoryIntelligence(extractSupplierCategory({}, ''), summary);
-        const hierarchyData = await extractCategoryHierarchy(supplierUuid, companyName, transcript, summary);
-        await recordQuestionUsage("test_question", 100, 0.5, 1, 1, false);
       }
     }
+
     res.json(summary);
   } catch (error) {
     console.error("Analysis error:", error);
@@ -313,11 +240,8 @@ app.get("/api/learning/questions", async (req, res) => {
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log(`✅ Vortex Live Call Copilot v14 running on port ${PORT}`);
-  console.log(`✓ UPGRADE #1: True Question Effectiveness`);
-  console.log(`✓ UPGRADE #2: Category Hierarchy`);
-  console.log(`✓ UPGRADE #3: Recency Weighting`);
-  console.log(`✓ UPGRADE #4: Pattern Decay`);
-  console.log(`✓ UPGRADE #5: Playbook Confidence`);
-  console.log(`✓ UPGRADE #6: Dynamic Approval Probability`);
+  console.log(`✅ Vortex Supplier Intelligence Platform v14 running on port ${PORT}`);
+  console.log(`✓ Mode: Analysis-Based Intelligence Platform`);
+  console.log(`✓ NOT a sales script generator`);
+  console.log(`✓ Endpoints: /api/analyze-supplier-message, /api/call-summary`);
 });
