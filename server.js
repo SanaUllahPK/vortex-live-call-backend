@@ -1,7 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import express from "express";
 import cors from "cors";
-import { createClient } from "@supabase/supabase-js";
 
 const app = express();
 app.use(express.json());
@@ -11,146 +10,66 @@ const client = new Anthropic({
   apiKey: process.env.CLAUDE_API_KEY,
 });
 
-// SUPABASE CLIENT
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_KEY
-);
+const VORTEX_PROFILE = `
+=== VORTEX ORIGIN BRANDS LLC ===
+Company: Vortex Origin Brands, Wyoming-based wholesale company
+Founder: Sanaullah
+Business: Wholesale Buyer & Supplier Partnerships
+Position: Professional retail & distribution business
 
-// SUPABASE ADMIN CLIENT
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+When asked about Vortex:
+"We're Vortex Origin Brands, a Wyoming-based wholesale company. We work with 
+established suppliers across multiple product categories and we're currently 
+expanding our supplier network."
 
-// ════════════════════════════════════════
-// PRIORITY 4: GET ALL SUPPLIERS (Dashboard)
-// ════════════════════════════════════════
+CRITICAL: Always position Vortex as a WHOLESALE BUYER.
+Never as: consultant, agency, service provider, or Amazon specialist.
+`;
 
-app.get("/api/suppliers/dashboard", async (req, res) => {
-  try {
-    const { status, sort } = req.query;
+const CALL_INSTRUCTIONS = {
+  distributor_inquiry: `
+YOU ARE THE BUYER. They are the supplier/distributor.
+GOAL: Open a wholesale account with them.
+DISCOVERY: Learn their MOQ, required documents, approval process, timeline, payment terms.
+TONE: Professional buyer with real purchasing power.
+  `,
+  
+  quick_note: `
+TARGET: Brand you want to buy from.
+GOAL: Learn if they're open to wholesale partnerships.
+DISCOVERY: Their approval process, requirements, MOQ, decision maker.
+TONE: Professional buyer evaluating partnership fit.
+  `,
+  
+  brand_registry: `
+TARGET: Brand with unprotected Amazon presence.
+GOAL: Position as wholesale buyer + Amazon manager.
+DISCOVERY: Current Amazon situation, Brand Registry status, interest level.
+TONE: Helpful professional who sees an opportunity.
+  `,
+  
+  retail_inquiry: `
+TARGET: Brand that doesn't want Amazon.
+GOAL: Position as retail purchasing partner ONLY.
+**CRITICAL: NEVER mention Amazon unless they bring it up first.**
+DISCOVERY: Current distribution, wholesale openness, requirements.
+TONE: Legitimate retail buyer.
+  `
+};
 
-    const { data: suppliers, error } = await supabase
-      .from("suppliers")
-      .select("id, name, contact, email, phone, moq, lead_time, brands");
-
-    if (error) {
-      return res.status(500).json({ error: "Failed to load suppliers", details: error.message });
-    }
-
-    // Format for frontend
-    const formattedSuppliers = (suppliers || []).map(s => ({
-      supplier_id: String(s.id),
-      company_name: s.name,
-      contact_name: s.contact,
-      email: s.email,
-      phone: s.phone,
-      moq: s.moq,
-      lead_time: s.lead_time,
-      brands: s.brands,
-      relationship_status: "New",
-      approval_likelihood: "Low",
-      last_contact_date: null,
-      next_follow_up_date: null,
-      total_interactions: 0,
-      missing_count: 6,
-      missing_info: "MOQ, Timeline, Docs, Payment, Shipping, Catalog"
-    }));
-
-    res.json({
-      suppliers: formattedSuppliers,
-      total: formattedSuppliers.length
-    });
-  } catch (error) {
-    console.error("Error loading dashboard:", error);
-    res.status(500).json({ error: "Failed to load dashboard", details: error.message });
-  }
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", message: "Vortex Live Call Copilot v1" });
 });
-
-// ════════════════════════════════════════
-// PRIORITY 1: LOAD SUPPLIER PROFILE
-// ════════════════════════════════════════
-
-app.post("/api/supplier/load", async (req, res) => {
-  try {
-    const { supplier_id } = req.body;
-
-    if (!supplier_id) {
-      return res.status(400).json({ error: "supplier_id required" });
-    }
-
-    // Load supplier
-    const { data: supplier, error: supplierError } = await supabase
-      .from("suppliers")
-      .select("*")
-      .eq("id", parseInt(supplier_id))
-      .single();
-
-    if (supplierError) {
-      return res.status(404).json({ error: "Supplier not found" });
-    }
-
-    // Load contacts
-    const { data: contacts } = await supabase
-      .from("contacts")
-      .select("*")
-      .eq("supplier_id", supplier_id);
-
-    // Load interactions
-    const { data: interactions } = await supabase
-      .from("interactions")
-      .select("*")
-      .eq("supplier_id", supplier_id)
-      .order("interaction_date", { ascending: false })
-      .limit(5);
-
-    // Parse known info
-    const knownInfo = {
-      moq: supplier.moq || null,
-      lead_time: supplier.lead_time || null,
-      payment_terms: supplier.payment_terms || null
-    };
-
-    const missingInfo = [];
-    if (!knownInfo.moq) missingInfo.push("MOQ");
-    if (!knownInfo.lead_time) missingInfo.push("Lead Time");
-    if (!knownInfo.payment_terms) missingInfo.push("Payment Terms");
-
-    res.json({
-      supplier: {
-        supplier_id: String(supplier.id),
-        company_name: supplier.name,
-        contact: supplier.contact,
-        email: supplier.email,
-        phone: supplier.phone,
-        relationship_status: "New",
-        approval_likelihood: "Low"
-      },
-      primary_contact: contacts?.[0] || null,
-      all_contacts: contacts || [],
-      known_information: knownInfo,
-      missing_information: missingInfo,
-      recent_interactions: interactions || []
-    });
-  } catch (error) {
-    console.error("Error loading supplier:", error);
-    res.status(500).json({ error: "Failed to load supplier", details: error.message });
-  }
-});
-
-// ════════════════════════════════════════
-// LIVE CALL COPILOT
-// ════════════════════════════════════════
 
 app.post("/api/analyze-live", async (req, res) => {
   try {
-    const { transcript, conversationHistory, brief, callType, supplierProfile } = req.body;
+    const { transcript, conversationHistory, brief, callType } = req.body;
 
     if (!transcript) {
       return res.status(400).json({ error: "Transcript required" });
     }
 
+    // Build conversation context
     let context = "";
     if (conversationHistory && conversationHistory.length > 0) {
       context = "Conversation so far:\n";
@@ -160,28 +79,7 @@ app.post("/api/analyze-live", async (req, res) => {
       context += "\n";
     }
 
-    let memoryContext = "";
-    if (supplierProfile) {
-      memoryContext = `SUPPLIER MEMORY:
-Supplier: ${supplierProfile.supplier.company_name}
-Contact: ${supplierProfile.supplier.contact}
-Status: ${supplierProfile.supplier.relationship_status}
-
-Known: ${Object.entries(supplierProfile.known_information || {})
-  .filter(([k, v]) => v)
-  .map(([k, v]) => `${k}: ${v}`)
-  .join(", ") || "Nothing yet"}
-
-Missing: ${(supplierProfile.missing_information || []).join(", ") || "All collected"}
-
-RULES:
-- Do NOT repeat information already known
-- Prioritize discovering MISSING information
-- When enough info collected, STOP asking questions
-- Summarize and confirm next steps
-
-`;
-    }
+    const instruction = CALL_INSTRUCTIONS[callType] || CALL_INSTRUCTIONS.distributor_inquiry;
 
     const message = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
@@ -189,7 +87,10 @@ RULES:
       messages: [
         {
           role: "user",
-          content: `${memoryContext}
+          content: `${VORTEX_PROFILE}
+
+${instruction}
+
 ${context}Contact just said: "${transcript}"
 
 You are Sanaullah's live call copilot.
@@ -197,16 +98,18 @@ Your ONLY job: Tell him what to say next.
 
 RULES:
 1. Answer their question first (never dodge)
-2. Do NOT repeat information already known
-3. Prioritize discovering MISSING information
-4. When enough info is collected, STOP asking questions
-5. Instead: Summarize what was learned, confirm next steps, close professionally
-6. Sound like a real person, not a script
+2. Answer clearly and professionally
+3. Then continue discovery naturally (if appropriate)
+4. Sound like a real person, not a script
+5. Sound like a professional wholesale buyer
+6. Use whatever length is necessary (1 sentence or 5 sentences)
 
 OUTPUT ONLY:
 
 SAY NOW:
-[Exact words Sanaullah should say]`
+[Exact words Sanaullah should say. Nothing else.]
+
+Do not explain. Do not coach. Just tell him what to say.`
         }
       ]
     });
@@ -220,11 +123,7 @@ SAY NOW:
   }
 });
 
-app.get("/health", (req, res) => {
-  res.json({ status: "ok" });
-});
-
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
+  console.log(`✅ Vortex Live Call Copilot v1 running on port ${PORT}`);
 });
