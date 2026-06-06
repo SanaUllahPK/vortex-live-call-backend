@@ -2,21 +2,27 @@ import Anthropic from "@anthropic-ai/sdk";
 import express from "express";
 import cors from "cors";
 import { createClient } from "@supabase/supabase-js";
+
 const app = express();
 app.use(express.json());
 app.use(cors());
+
 const client = new Anthropic({
   apiKey: process.env.CLAUDE_API_KEY,
 });
+
 const supabase = createClient(
-  process.env.SUPABASE_URL || "https://zwxqtzxkizjocbegixsd.supabase.co",
-  process.env.SUPABASE_SERVICE_ROLE_KEY || "sb_secret_DdZnljniQu3crVmD4vkPCA_DqyxO1LV"
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
 );
+
 const supplierMemory = new Map();
+
 const normalizeSupplierName = (name) => {
   if (!name) return null;
   return name.toLowerCase().replace(/\b(llc|inc|corp|co|ltd|company|inc\.|co\.|llc\.|distributor|dist|distribution|distributors)\b/g, "").replace(/\s+/g, " ").trim();
 };
+
 const findOrCreateSupplier = async (companyName, supplierId = null) => {
   const normalized = normalizeSupplierName(companyName);
   if (!normalized) return null;
@@ -31,6 +37,7 @@ const findOrCreateSupplier = async (companyName, supplierId = null) => {
     return newSupplier.id;
   } catch (error) {console.error("Identity resolution error:", error); return null;}
 };
+
 const loadSupplierMemory = async (supplierUuid) => {
   if (!supplierUuid) return null;
   try {
@@ -41,6 +48,23 @@ const loadSupplierMemory = async (supplierUuid) => {
     return data;
   } catch (error) {return null;}
 };
+
+const getConfidenceTier = (sampleSize) => {
+  if (sampleSize < 10) return 'Experimental';
+  if (sampleSize < 20) return 'Emerging Pattern';
+  if (sampleSize < 50) return 'Validated Pattern';
+  if (sampleSize < 100) return 'Strong Pattern';
+  return 'Proven Pattern';
+};
+
+const isConfidenceHighEnough = (sampleSize) => {
+  return sampleSize >= 20;
+};
+
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", message: "Vortex Live Call Copilot v14 - Learning Engine Upgraded" });
+});
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`✅ Vortex Live Call Copilot v14 running on port ${PORT}`);
