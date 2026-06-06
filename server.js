@@ -10,169 +10,211 @@ const client = new Anthropic({
   apiKey: process.env.CLAUDE_API_KEY,
 });
 
-const VORTEX_BUSINESS_PROFILE = `
-=== VORTEX ORIGIN BRANDS LLC ===
-
-Company: Vortex Origin Brands, Wyoming-based wholesale company
-Founder: Sanaullah
-What We Do: Purchase inventory in bulk, work with suppliers across multiple categories
-Identity: Wholesale buyer, NOT consultant or agency
-
-When answering "tell me about your company":
-"We're Vortex Origin Brands, a Wyoming-based wholesale company. We work with suppliers 
-and brands across multiple product categories and we're currently expanding our supplier 
-network. I came across your company and wanted to learn more about your wholesale program 
-and see if there might be a fit."
-
-Discovery comes FIRST. Pitching comes LATER.
-`;
-
-// DISTRIBUTOR-SPECIFIC DISCOVERY PRIORITIES
-const DISCOVERY_PRIORITIES = {
+// DISCOVERY TRACKING
+const DISCOVERY_ITEMS = {
   distributor_inquiry: {
-    level_1_must_learn: [
-      "Do they accept new wholesale accounts?",
-      "What's their MOQ (Minimum Order Quantity)?",
-      "Do they require a reseller certificate or business license?",
-      "What's their application/approval process?",
-      "How long does approval typically take?",
-      "What brands/product categories do they carry?"
+    priority_1: [
+      { id: "accept_accounts", label: "Accept new accounts", key: "accept_accounts" },
+      { id: "moq", label: "MOQ", key: "moq" },
+      { id: "documents", label: "Required documents", key: "documents" },
+      { id: "approval_process", label: "Approval process", key: "approval_process" },
+      { id: "approval_timeline", label: "Approval timeline", key: "approval_timeline" }
     ],
-    level_2_good_to_learn: [
-      "What's their shipping policy?",
-      "What payment terms do they offer?",
-      "Do they have MAP (Minimum Advertised Price) restrictions?",
-      "Do they restrict sales on Amazon?",
-      "Are there territory restrictions?",
-      "What documentation do they require from new buyers?"
+    priority_2: [
+      { id: "payment_terms", label: "Payment terms", key: "payment_terms" },
+      { id: "shipping_policy", label: "Shipping policy", key: "shipping_policy" },
+      { id: "inventory", label: "Inventory availability", key: "inventory" },
+      { id: "restrictions", label: "Brand restrictions", key: "restrictions" }
     ],
-    level_3_later: [
-      "Volume discounts available?",
-      "Special promotional programs?",
-      "Exclusive brand arrangements?",
-      "Return/restocking policies?"
+    priority_3: [
+      { id: "opportunities", label: "Growth opportunities", key: "opportunities" },
+      { id: "categories", label: "Additional brands/categories", key: "categories" }
+    ]
+  },
+  quick_note: {
+    priority_1: [
+      { id: "accept_wholesale", label: "Accept wholesale partners", key: "accept_wholesale" },
+      { id: "approval_process", label: "Approval process", key: "approval_process" },
+      { id: "requirements", label: "Requirements", key: "requirements" },
+      { id: "moq", label: "MOQ/volume expectations", key: "moq" }
+    ],
+    priority_2: [
+      { id: "timeline", label: "Approval timeline", key: "timeline" },
+      { id: "decision_maker", label: "Decision maker confirmed", key: "decision_maker" }
+    ]
+  },
+  brand_registry: {
+    priority_1: [
+      { id: "aware_issue", label: "Aware of Amazon challenges", key: "aware_issue" },
+      { id: "brand_registry", label: "Brand Registry status", key: "brand_registry" },
+      { id: "unauthorized_sellers", label: "Unauthorized seller concern", key: "unauthorized_sellers" }
+    ],
+    priority_2: [
+      { id: "decision_maker", label: "Decision maker identified", key: "decision_maker" },
+      { id: "interest", label: "Interest level", key: "interest" }
+    ]
+  },
+  retail_inquiry: {
+    priority_1: [
+      { id: "current_channels", label: "Current distribution channels", key: "current_channels" },
+      { id: "wholesale_open", label: "Open to wholesale partners", key: "wholesale_open" },
+      { id: "requirements", label: "Partner requirements", key: "requirements" }
+    ],
+    priority_2: [
+      { id: "ideal_partner", label: "Ideal partner profile", key: "ideal_partner" },
+      { id: "approval_process", label: "Approval process", key: "approval_process" }
     ]
   }
 };
 
-// CALL TYPE GUIDES - UPDATED WITH BETTER STRUCTURE
-const CALL_TYPE_GUIDES = {
-  quick_note: `
-=== QUICK NOTE / WHOLESALE ACCOUNT INQUIRY ===
+// CONVERSATION STAGES
+const STAGES = {
+  introduction: "Introduction",
+  qualification: "Qualification",
+  discovery: "Discovery",
+  documentation: "Documentation & Approval",
+  closing: "Closing"
+};
 
-Target: Brands you want to buy from at wholesale
-Email type: "Wholesale Inquiry A & B"
+// VORTEX BUSINESS PROFILE
+const VORTEX_PROFILE = `
+=== VORTEX ORIGIN BRANDS LLC ===
+Company: Vortex Origin Brands, Wyoming-based wholesale company
+Founder: Sanaullah
+Business: Wholesale Purchasing & Supplier Partnerships
+Identity: WHOLESALE BUYER (not consultant, not agency, not service provider)
+Positioning: Professional retail & distribution business
 
-YOUR ROLE: You're a buyer seeking to establish a wholesale purchasing relationship.
+When asked about Vortex:
+"We're Vortex Origin Brands, a Wyoming-based wholesale company. We work with established 
+suppliers across consumer product categories and we're currently expanding our supplier network."
 
-OPENING SCRIPT:
-"Hey [Name], thanks for picking up. I'm Sanaullah with Vortex Origin Brands—we're a 
-Wyoming-based wholesale company. We work with suppliers across multiple product categories 
-and we're expanding our supplier network. Do you handle wholesale accounts, or is there 
-someone on your team I should be talking to?"
+MISSION: 
+Be a professional, professional wholesale buyer. Sound like a real business, not a pitch.
+`;
 
-KEY DISCOVERY AREAS:
-- Do they work with wholesale partners?
-- What's their approval process?
-- What do they require from new wholesale accounts?
-- Who makes partnership decisions?
-- What's their MOQ/volume expectations?
-
-TONE: Respectful buyer, not desperate. You're evaluating if they're a fit.
-  `,
-
-  brand_registry: `
-=== BRAND REGISTRY / AMAZON PROTECTION ===
-
-Target: Brands with unprotected Amazon presence
-Email type: "For Brands Not Yet in Brand Registry"
-
-YOUR ROLE: You're a wholesale buyer offering to manage their Amazon channel properly.
-
-OPENING SCRIPT:
-"Hey [Name], thanks for taking the call. I'm Sanaullah with Vortex Origin Brands. 
-I came across your products on Amazon and noticed you've got multiple third-party sellers 
-offering them—which is pretty common. I run a wholesale operation, and part of what we do 
-is help brands protect and properly represent themselves on Amazon. Do you have a few minutes?"
-
-KEY DISCOVERY AREAS:
-- Do they have Brand Registry set up?
-- Who manages their Amazon currently?
-- Are they aware of unauthorized sellers?
-- What's their biggest Amazon challenge?
-- Do they want to protect their brand on Amazon?
-
-TONE: Helpful expert who sees an opportunity they may have missed.
-  `,
-
-  retail_inquiry: `
-=== RETAIL INQUIRY (AMAZON-ALLERGIC) ===
-
-Target: Brands that don't want Amazon
-Email type: "Non-Amazon (Safe Retail Angle)"
-
-**CRITICAL: NEVER mention Amazon unless they bring it up.**
-
-YOUR ROLE: You're a retail buyer/distributor seeking wholesale accounts.
-
-OPENING SCRIPT:
-"Hey [Name], thanks for your time. I'm Sanaullah with Vortex Origin Brands—we're a 
-Wyoming-based retail and distribution business. We work with a select group of suppliers 
-and focus on consistent, reliable ordering and proper brand representation. I came across 
-your company and was impressed. Do you work with wholesale partners?"
-
-KEY DISCOVERY AREAS:
-- How do they currently distribute?
-- What channels do they focus on?
-- Do they work with retail/wholesale partners?
-- What's their ideal retail partner?
-- Who makes partnership decisions?
-
-TONE: Legitimate retail buyer, respectful of their distribution strategy.
-  `,
-
+// CALL TYPE INSTRUCTIONS
+const CALL_INSTRUCTIONS = {
   distributor_inquiry: `
-=== DISTRIBUTOR INQUIRY (YOU'RE THE BUYER) ===
-
-Target: Distributors/suppliers you want to buy FROM
-Email type: "Opening wholesale account with Distributor"
-
-YOUR ROLE: You're a growing wholesale buyer seeking to open accounts with suppliers.
-
-OPENING SCRIPT:
-"Hey [Name], thanks for picking up. I'm Sanaullah with Vortex Origin Brands—we're a 
-Wyoming-based wholesale company. We're currently expanding our supplier network across 
-multiple product categories, and I came across your company. Before I take up too much 
-of your time, what does your typical process look like for setting up a new wholesale account?"
-
-DISCOVERY PRIORITY LEVEL 1 (MUST LEARN):
-☐ Do they accept new wholesale accounts?
-☐ What's their MOQ?
-☐ Reseller certificate required?
-☐ Application process?
-☐ Approval timeline?
-☐ What brands/categories do they carry?
-
-DISCOVERY PRIORITY LEVEL 2 (GOOD TO LEARN):
-☐ Shipping policy?
-☐ Payment terms?
-☐ MAP restrictions?
-☐ Amazon restrictions?
-☐ Territory restrictions?
-☐ Documentation required?
-
-DISCOVERY PRIORITY LEVEL 3 (LATER):
-- Volume discounts
-- Promotional programs
-- Exclusives
-- Return policies
-
-TONE: Professional buyer. You have buying power. You're evaluating if they're a good fit.
-
-NEXT OBJECTIVE AFTER OPENING:
-Learn their approval process and requirements.
+YOU'RE THE BUYER. They're the supplier/distributor.
+GOAL: Open a wholesale account. Learn their requirements and process.
+STAGE PROGRESSION: Introduction → Qualification → Discovery → Documentation & Approval
+  `,
+  quick_note: `
+BRAND YOU WANT TO BUY FROM.
+GOAL: Learn if they're open to wholesale partnerships. What's their process?
+STAGE PROGRESSION: Introduction → Qualification → Discovery → Closing
+  `,
+  brand_registry: `
+BRAND WITH UNPROTECTED AMAZON PRESENCE.
+GOAL: Help them see Amazon opportunity. Position yourself as wholesale buyer + Amazon manager.
+STAGE PROGRESSION: Introduction → Awareness → Interest → Discovery → Closing
+  `,
+  retail_inquiry: `
+BRAND THAT DOESN'T WANT AMAZON.
+GOAL: Position as retail purchasing partner. Learn distribution needs.
+**NEVER MENTION AMAZON unless they bring it up.**
+STAGE PROGRESSION: Introduction → Qualification → Discovery → Closing
   `
 };
+
+// DETERMINE CURRENT STAGE
+function determineStage(conversationHistory, callType) {
+  if (!conversationHistory || conversationHistory.length === 0) return STAGES.introduction;
+  
+  const messages = conversationHistory.map(h => h.text.toLowerCase()).join(" ");
+  
+  // Introduction: First exchange
+  if (conversationHistory.length <= 2) return STAGES.introduction;
+  
+  // Qualification: Learning about them
+  if (messages.includes("what do you") || messages.includes("how do you") || 
+      messages.includes("your company") || messages.includes("your business")) {
+    return STAGES.qualification;
+  }
+  
+  // Discovery: Deep details
+  if (messages.includes("moq") || messages.includes("certificate") || 
+      messages.includes("process") || messages.includes("approval")) {
+    return STAGES.discovery;
+  }
+  
+  // Documentation: Specific requirements
+  if (messages.includes("document") || messages.includes("requirement") || 
+      messages.includes("need from")) {
+    return STAGES.documentation;
+  }
+  
+  // Closing: Next steps
+  if (messages.includes("next") || messages.includes("when") || 
+      messages.includes("timeline") || messages.includes("send")) {
+    return STAGES.closing;
+  }
+  
+  return STAGES.discovery;
+}
+
+// AUTO-DETECT DISCOVERED ITEMS
+function autoDetectDiscovery(transcript, itemsList) {
+  const discovered = [];
+  const text = transcript.toLowerCase();
+  
+  itemsList.forEach(item => {
+    // Check if this discovery was mentioned
+    const keywords = getKeywords(item.key);
+    if (keywords.some(kw => text.includes(kw))) {
+      discovered.push(item.id);
+    }
+  });
+  
+  return discovered;
+}
+
+function getKeywords(itemKey) {
+  const keywordMap = {
+    accept_accounts: ["accept", "yes we", "we do", "new account"],
+    moq: ["moq", "minimum order", "order quantity", "$", "units"],
+    documents: ["document", "certificate", "reseller", "require", "need"],
+    approval_process: ["process", "application", "approval", "steps"],
+    approval_timeline: ["how long", "days", "weeks", "timeline", "time"],
+    payment_terms: ["payment", "net 30", "net 60", "terms", "invoice"],
+    shipping_policy: ["shipping", "ship", "freight", "delivery"],
+    inventory: ["inventory", "stock", "available", "in stock"],
+    restrictions: ["restrict", "amazon", "exclusive", "territory", "cannot"],
+    opportunities: ["opportunity", "growth", "scale", "volume"],
+    categories: ["category", "brand", "line", "products we carry"],
+    accept_wholesale: ["wholesale", "yes", "interested", "open to"],
+    aware_issue: ["know", "aware", "problem", "issue", "challenge"],
+    brand_registry: ["brand registry", "protected", "registration"],
+    unauthorized_sellers: ["seller", "third party", "unauthorized", "multiple"],
+    current_channels: ["sell", "channel", "where", "website", "retail"],
+    wholesale_open: ["wholesale", "partner", "interested", "open to"],
+    ideal_partner: ["ideal", "look for", "want", "important"],
+    interest: ["interested", "could work", "sounds good", "maybe"],
+    decision_maker: ["decision", "approve", "manager", "owner", "boss"]
+  };
+  
+  return keywordMap[itemKey] || [];
+}
+
+// SCORE ACCOUNT OPPORTUNITY
+function scoreAccount(discovered, callType) {
+  const items = DISCOVERY_ITEMS[callType];
+  const allItems = [...items.priority_1, ...items.priority_2, ...items.priority_3];
+  const p1Count = items.priority_1.filter(i => discovered.includes(i.id)).length;
+  const p1Total = items.priority_1.length;
+  
+  // Strong opportunity: All or most priority 1 items discovered
+  if (p1Count >= p1Total - 1) return "🟢";
+  
+  // Needs more discovery: Some priority 1 items
+  if (p1Count >= p1Total / 2) return "🟡";
+  
+  // Poor fit or early stage
+  if (p1Count < p1Total / 2) return "🟡";
+  
+  return "🟡";
+}
 
 app.get("/health", (req, res) => {
   res.json({ status: "ok", message: "Vortex Live Call Backend" });
@@ -180,63 +222,84 @@ app.get("/health", (req, res) => {
 
 app.post("/api/analyze-live", async (req, res) => {
   try {
-    const { transcript, missionType, conversationHistory, brief, callType } = req.body;
+    const { transcript, conversationHistory, brief, callType } = req.body;
 
     if (!transcript) {
       return res.status(400).json({ error: "Transcript required" });
     }
 
+    // Build conversation context
     let context = "";
     if (conversationHistory && conversationHistory.length > 0) {
       context = "Conversation so far:\n";
       conversationHistory.forEach(item => {
-        context += `${item.speaker === 'supplier' ? 'Contact' : 'Sanaullah'}: ${item.text}\n`;
+        context += `${item.speaker === 'contact' ? 'Contact' : 'Sanaullah'}: ${item.text}\n`;
       });
       context += "\n";
     }
 
-    let briefContext = "";
-    if (brief && brief.trim()) {
-      briefContext = `CALL BRIEF:\n${brief}\n\n`;
-    }
-
-    const callTypeGuide = CALL_TYPE_GUIDES[callType] || CALL_TYPE_GUIDES.quick_note;
-
+    // Get call type instructions
+    const instruction = CALL_INSTRUCTIONS[callType] || CALL_INSTRUCTIONS.distributor_inquiry;
+    const items = DISCOVERY_ITEMS[callType] || DISCOVERY_ITEMS.distributor_inquiry;
+    const allItems = [...items.priority_1, ...items.priority_2, ...items.priority_3];
+    
+    // Determine current stage
+    const currentStage = determineStage(conversationHistory, callType);
+    
+    // Auto-detect what's been discovered
+    const allDiscoveredInHistory = conversationHistory
+      .filter(h => h.speaker === 'contact')
+      .flatMap(h => autoDetectDiscovery(h.text, allItems));
+    const discovered = [...new Set(allDiscoveredInHistory)];
+    
+    // Score account
+    const score = scoreAccount(discovered, callType);
+    
+    // Get missing items
+    const discovered_ids = new Set(discovered);
+    const missing_p1 = items.priority_1.filter(i => !discovered_ids.has(i.id));
+    
     const message = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 300,
+      max_tokens: 250,
       messages: [
         {
           role: "user",
-          content: `${VORTEX_BUSINESS_PROFILE}
+          content: `${VORTEX_PROFILE}
 
-${callTypeGuide}
+${instruction}
 
-${briefContext}${context}Contact just said: "${transcript}"
+${context}Contact just said: "${transcript}"
 
-Generate coaching in this exact format:
+You are a LIVE CALL COPILOT. Provide real-time guidance.
 
-NEXT OBJECTIVE:
-[What's the goal right now? What do you need to learn next?]
+OUTPUT EXACTLY in this format:
 
-WHY THIS MATTERS:
-[Why is learning this important?]
+SAY NOW:
+[2-5 conversational sentences. Sanaullah should say this immediately. Sound natural. Answer their question first, then naturally continue discovery.]
 
-SUGGESTED QUESTION:
-[The actual question Sanaullah should ask]
+WATCH FOR:
+- [Thing to listen for]
+- [Thing to listen for]
 
-COACHING NOTES:
-[Any tone/approach tips]
+RED FLAGS:
+[List if relevant, otherwise write: None]
 
-Keep suggested question to 1-2 sentences. Be conversational, not robotic.`
+Do NOT explain your reasoning. Do NOT provide coaching. Just tell Sanaullah what to say next.`
         }
       ]
     });
 
-    const guidance =
-      message.content[0].type === "text" ? message.content[0].text : "";
+    const guidance = message.content[0].type === "text" ? message.content[0].text : "";
 
-    res.json({ guidance });
+    res.json({
+      guidance,
+      currentStage,
+      discovered,
+      missing: missing_p1.map(i => i.label),
+      score,
+      accountScore: score
+    });
   } catch (error) {
     console.error("Claude API error:", error);
     res
@@ -247,5 +310,5 @@ Keep suggested question to 1-2 sentences. Be conversational, not robotic.`
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log(`✅ Vortex Live Call Backend running on port ${PORT}`);
+  console.log(`✅ Vortex Live Call Backend (Copilot Mode) running on port ${PORT}`);
 });
