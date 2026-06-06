@@ -131,6 +131,21 @@ Immediately prioritize clarification if the distributor mentions:
 
 Ask follow-up questions about these items BEFORE moving on to other topics.
 
+AMAZON QUESTION TRANSPARENCY RULE:
+If distributor asks: "Are you an Amazon seller?" or "Do you sell on Amazon?"
+
+DO NOT invent information.
+DO NOT deny Amazon activity unless confirmed by user.
+
+Instead:
+1. Seek clarification about the restriction: "What's your concern about Amazon?"
+2. Gather details of the policy: "Do you have specific requirements or restrictions?"
+3. Determine whether the restriction is negotiable: "Is this a hard requirement or something we can discuss?"
+4. Preserve credibility: Be honest and direct
+
+Example response:
+"Good question. What's driving that? Are you looking to avoid conflict with Amazon sellers, or do you have exclusive distribution requirements?"
+
 ANTI-REPETITION RULE:
 NEVER start consecutive responses with:
 - Perfect
@@ -158,12 +173,20 @@ If RED FLAGS detected:
 → STOP normal discovery flow.
 → Ask clarifying questions about the red flag FIRST.
 
+If AMAZON QUESTION asked:
+→ Seek clarification, don't deny or invent.
+→ Gather policy details.
+→ Determine if negotiable.
+→ Preserve credibility.
+
 LANGUAGE:
 - Avoid repetitive acknowledgements
 - Sound natural and professional
 - Be direct and efficient
 - Use confident language about Vortex
 - Never apologize for being new
+- Never invent information
+- Be transparent about concerns
 `;
 
 const CALL_INSTRUCTIONS = {
@@ -193,7 +216,7 @@ TONE: Legitimate retail buyer.
 };
 
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", message: "Vortex Live Call Copilot v3 - Mission Tracking + Red Flags" });
+  res.json({ status: "ok", message: "Vortex Live Call Copilot v4 - Transparency + Amazon Handling" });
 });
 
 app.post("/api/analyze-live", async (req, res) => {
@@ -236,9 +259,11 @@ BEFORE RESPONDING:
 2. Identify which mission items have been collected
 3. Identify which are missing (by priority)
 4. Check for RED FLAGS (marketplace restrictions, Amazon restrictions, annual minimums, exclusivity, geographic limits, required references, MAP enforcement)
-5. If RED FLAGS detected: Prioritize clarification questions
-6. If all required items collected: Generate professional closing statement
-7. If items missing: Ask for the highest-priority missing item
+5. Check if AMAZON QUESTION was asked - if so, handle with transparency
+6. If RED FLAGS detected: Prioritize clarification questions
+7. If AMAZON QUESTION asked: Seek clarification without inventing answers
+8. If all required items collected: Generate professional closing statement
+9. If items missing: Ask for the highest-priority missing item
 
 RULES:
 1. Answer their question first (never dodge)
@@ -252,7 +277,8 @@ RULES:
 9. FOLLOW QUESTION PRIORITY ORDER
 10. NEVER ask for information already collected
 11. DETECT RED FLAGS and prioritize them
-12. GENERATE PROFESSIONAL CLOSE when mission is complete
+12. HANDLE AMAZON QUESTIONS with transparency - don't invent answers
+13. GENERATE PROFESSIONAL CLOSE when mission is complete
 
 OUTPUT ONLY:
 
@@ -310,6 +336,8 @@ Return this exact JSON structure (fill in "unknown" if information wasn't discus
   "compliance_requirements": [],
   "volume_discounts": "string",
   "next_steps": [],
+  "amazon_question_asked": true/false,
+  "amazon_question_handled_transparently": true/false,
   "red_flags_detected": [],
   "red_flag_details": [],
   "professionalism_score": 0-10,
@@ -317,6 +345,7 @@ Return this exact JSON structure (fill in "unknown" if information wasn't discus
   "efficiency_score": 0-10,
   "credibility_score": 0-10,
   "closing_score": 0-10,
+  "transparency_score": 0-10,
   "overall_score": 0-10
 }`;
 
@@ -346,9 +375,10 @@ Return this exact JSON structure (fill in "unknown" if information wasn't discus
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log(`✅ Vortex Live Call Copilot v3 running on port ${PORT}`);
+  console.log(`✅ Vortex Live Call Copilot v4 running on port ${PORT}`);
   console.log(`✓ Mission Tracking Enabled`);
   console.log(`✓ Red Flag Detection Enabled`);
+  console.log(`✓ Amazon Question Transparency Enabled`);
   console.log(`✓ Deduplication Enabled`);
   console.log(`✓ Professional Close Enabled`);
 });
