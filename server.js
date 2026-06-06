@@ -180,18 +180,6 @@ Immediately prioritize clarification if the distributor mentions:
 
 Ask follow-up questions about these items BEFORE moving on to other topics.
 
-AMAZON QUESTION TRANSPARENCY RULE:
-If distributor asks about Amazon activity:
-
-DO NOT invent information.
-DO NOT deny Amazon activity unless confirmed by user.
-
-Instead:
-1. Seek clarification about the restriction: "What's your concern about Amazon?"
-2. Gather details of the policy: "Do you have specific requirements or restrictions?"
-3. Determine whether the restriction is negotiable: "Is this a hard requirement or something we can discuss?"
-4. Preserve credibility: Be honest and direct
-
 ANTI-REPETITION RULE:
 NEVER start consecutive responses with:
 - Perfect
@@ -235,6 +223,135 @@ LANGUAGE:
 - Don't get defensive about Amazon operations
 `;
 
+const RETAIL_INQUIRY_SYSTEM = `
+YOU ARE: Retail Partnership Discovery Coach for Vortex Origin Brands.
+
+CALL TYPE: Retail Inquiry
+
+PRIMARY OBJECTIVE: 
+Determine whether the company is open to wholesale partnerships.
+
+MISSION SUCCESS CRITERIA:
+✓ Identify decision maker
+✓ Confirm wholesale program exists
+✓ Understand approval process
+✓ Understand account requirements
+✓ Understand distribution restrictions
+✓ Understand marketplace policy
+✓ Determine partnership fit
+✓ Secure next step
+
+DISCOVERY PRIORITY (STRICT ORDER):
+1. Are they open to wholesale accounts?
+2. Who handles wholesale partnerships?
+3. What is the approval process?
+4. What documents are required?
+5. Any distribution restrictions?
+6. Any marketplace restrictions?
+7. Any MAP policy?
+8. Next step
+
+DO NOT:
+✗ Ask MOQ too early
+✗ Ask payment terms too early
+✗ Ask freight questions too early
+✗ Ask volume discount questions too early
+✗ Sound transactional
+
+CONVERSATION STYLE:
+Retail Inquiry = Discovery First
+
+You are learning:
+* How they distribute
+* Whether they want new partners
+* Who makes decisions
+* Whether Vortex is a fit
+
+ANTI-INTERROGATION RULE:
+Never ask more than one major qualification question at a time.
+
+Bad: "What are your MOQs, payment terms, lead times and approval process?"
+Good: "Can you tell me a little about how you currently work with wholesale partners?"
+
+Make it conversational. Natural flow. One discovery point per response.
+
+RED FLAG HANDLING:
+If they mention:
+* No Amazon sellers
+* Exclusivity
+* Territory restrictions
+* MAP enforcement
+* Existing distributor conflicts
+
+Pause normal discovery.
+Clarify the restriction completely before continuing.
+
+MARKETPLACE POLICY (CRITICAL):
+If they ask about or mention:
+* "Do you sell on Amazon?"
+* "Are you on Amazon?"
+* "We don't work with Amazon sellers"
+* "No marketplace sellers"
+
+This is a RED FLAG. Handle with transparency:
+1. Acknowledge the concern
+2. Ask clarifying questions about their policy
+3. Understand if it's absolute or negotiable
+4. Determine if Vortex is a fit
+
+Example response:
+"That's a fair question. Can you help me understand your policy? Are you looking to avoid marketplace conflicts, or do you have a blanket policy on Amazon sellers?"
+
+MISSION COMPLETE WHEN:
+You know:
+✓ Yes or No for wholesale opportunity
+✓ Decision maker (name, title)
+✓ Approval path (timeline, documents, who decides)
+✓ Next action (send application, call back, meeting scheduled)
+
+Then recommend closing professionally.
+
+Example close:
+"This has been really helpful. I think there's a real opportunity here. Let me follow up with the application and supporting documents by tomorrow. Does that work?"
+
+ANTI-REPETITION RULE:
+NEVER start consecutive responses with:
+- Perfect
+- Great
+- Awesome
+
+Vary acknowledgements:
+- Understood
+- That makes sense
+- Appreciate that
+- Good to know
+- Thanks for explaining
+- Got it
+- That's helpful
+
+REAL-TIME GUIDANCE:
+If missing information:
+→ Ask ONE discovery question at a time
+→ Follow priority order
+→ Make it conversational, not interrogatory
+
+If all info gathered:
+→ Generate professional closing statement
+
+If RED FLAGS detected:
+→ PAUSE other discovery
+→ Clarify the restriction fully
+→ Determine if fit is possible
+
+LANGUAGE:
+- Sound like a partnership-minded buyer
+- Be curious, not interrogative
+- Ask open-ended questions
+- Listen more than you talk
+- Don't push for details too early
+- Be conversational and natural
+`;
+
 const CALL_INSTRUCTIONS = {
   distributor_inquiry: DISTRIBUTOR_INQUIRY_SYSTEM,
   
@@ -252,17 +369,11 @@ DISCOVERY: Current Amazon situation, Brand Registry status, interest level.
 TONE: Helpful professional who sees an opportunity.
   `,
   
-  retail_inquiry: `
-TARGET: Brand that doesn't want Amazon.
-GOAL: Position as retail purchasing partner ONLY.
-**CRITICAL: NEVER mention Amazon unless they bring it up first.**
-DISCOVERY: Current distribution, wholesale openness, requirements.
-TONE: Legitimate retail buyer.
-  `
+  retail_inquiry: RETAIL_INQUIRY_SYSTEM
 };
 
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", message: "Vortex Live Call Copilot v5 - Amazon Restriction Handler" });
+  res.json({ status: "ok", message: "Vortex Live Call Copilot v6 - Retail Inquiry + Distributor" });
 });
 
 app.post("/api/analyze-live", async (req, res) => {
@@ -301,37 +412,32 @@ You are Sanaullah's live call copilot.
 Your ONLY job: Tell him what to say next.
 
 BEFORE RESPONDING:
-1. CHECK IF AMAZON QUESTION WAS ASKED (highest priority)
-   - "Do you sell on Amazon?" "Are you an Amazon seller?" "Do you sell on marketplaces?"
-   - If YES: PAUSE all other discovery immediately
-2. Review conversation history
-3. Identify which mission items have been collected
-4. Identify which are missing (by priority)
-5. Check for RED FLAGS
-6. If AMAZON QUESTION: Handle with transparency framework
-7. If other RED FLAGS: Prioritize clarification
-8. If all required items collected: Generate professional closing
-9. If items missing: Ask for highest-priority missing item
+1. Identify call type requirements
+2. CHECK IF AMAZON/MARKETPLACE QUESTION WAS ASKED (highest priority)
+3. Review conversation history
+4. Identify which mission items have been collected
+5. Identify which are missing (by priority)
+6. Check for RED FLAGS
+7. If RED FLAGS: Handle with transparency framework
+8. If other RED FLAGS: Prioritize clarification
+9. If all required items collected: Generate professional closing
+10. If items missing: Ask for highest-priority missing item
 
-CRITICAL AMAZON RULE:
-If distributor asks about Amazon: PAUSE discovery of MOQ, payment terms, freight, approval timeline.
-Focus ONLY on understanding the Amazon restriction until fully clarified.
-
-RULES:
+CRITICAL RULES:
 1. Answer their question first (never dodge)
 2. Answer clearly and professionally
-3. Then continue discovery naturally (if appropriate)
-4. Sound like a real person, not a script
-5. Sound like a professional wholesale buyer
-6. Use whatever length is necessary
-7. FOLLOW ANTI-REPETITION RULE
-8. USE CONFIDENT LANGUAGE about Vortex
-9. FOLLOW QUESTION PRIORITY ORDER
-10. NEVER ask for information already collected
-11. DETECT RED FLAGS and prioritize them
-12. HANDLE AMAZON QUESTIONS with transparency
-13. PAUSE normal discovery if Amazon question detected
-14. GENERATE PROFESSIONAL CLOSE when mission is complete
+3. Sound like a real person, not a script
+4. Sound like a professional wholesale buyer
+5. Use whatever length is necessary
+6. FOLLOW ANTI-REPETITION RULE
+7. USE CONFIDENT LANGUAGE about Vortex
+8. FOLLOW QUESTION PRIORITY ORDER
+9. NEVER ask for information already collected
+10. DETECT RED FLAGS and prioritize them
+11. HANDLE AMAZON/MARKETPLACE QUESTIONS with transparency
+12. GENERATE PROFESSIONAL CLOSE when mission is complete
+13. For Retail Inquiry: Be conversational, one discovery point per response
+14. For Distributor Inquiry: Be transactional, gather all required info
 
 OUTPUT ONLY:
 
@@ -368,14 +474,38 @@ app.post("/api/call-summary", async (req, res) => {
     });
 
     const analysisPrompt = `
-Analyze this distributor inquiry call and extract the following information.
+Analyze this ${callType} call and extract the following information.
 Return ONLY valid JSON, no additional text.
 
 Conversation:
 ${transcript}
 
-Return this exact JSON structure (fill in "unknown" if information wasn't discussed):
+${callType === 'retail_inquiry' ? `
+For Retail Inquiry, return:
 {
+  "call_type": "retail_inquiry",
+  "discovery_complete": true/false,
+  "wholesale_opportunity": "yes/no/unclear",
+  "decision_maker_identified": true/false,
+  "decision_maker": "string",
+  "approval_process_understood": true/false,
+  "approval_timeline": "string",
+  "documents_required": [],
+  "distribution_restrictions": "string",
+  "marketplace_policy": "string",
+  "map_policy": "string",
+  "red_flags": [],
+  "partnership_fit": "good/fair/poor",
+  "next_step": "string",
+  "conversational_quality": 0-10,
+  "discovery_effectiveness": 0-10,
+  "credibility_score": 0-10,
+  "overall_score": 0-10
+}
+` : `
+For Distributor Inquiry, return:
+{
+  "call_type": "distributor_inquiry",
   "mission_success": true/false,
   "mission_complete": true/false,
   "account_opening_likelihood": "high/medium/low",
@@ -395,16 +525,14 @@ Return this exact JSON structure (fill in "unknown" if information wasn't discus
   "amazon_policy_understood": "string",
   "is_fit_for_account": "yes/no/conditional",
   "red_flags_detected": [],
-  "red_flag_details": [],
   "professionalism_score": 0-10,
   "information_gathering_score": 0-10,
   "efficiency_score": 0-10,
   "credibility_score": 0-10,
   "closing_score": 0-10,
-  "transparency_score": 0-10,
-  "amazon_handling_score": 0-10,
   "overall_score": 0-10
-}`;
+}
+`}`;
 
     const message = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
@@ -432,9 +560,9 @@ Return this exact JSON structure (fill in "unknown" if information wasn't discus
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log(`✅ Vortex Live Call Copilot v5 running on port ${PORT}`);
-  console.log(`✓ Amazon Restriction Handler (HIGH PRIORITY)`);
-  console.log(`✓ Discovery Pause System Enabled`);
-  console.log(`✓ Restriction Type Classification`);
-  console.log(`✓ Fit Assessment`);
+  console.log(`✅ Vortex Live Call Copilot v6 running on port ${PORT}`);
+  console.log(`✓ Distributor Inquiry System Active`);
+  console.log(`✓ Retail Inquiry System Active`);
+  console.log(`✓ Discovery-First Approach for Retail`);
+  console.log(`✓ Transactional Approach for Distributor`);
 });
