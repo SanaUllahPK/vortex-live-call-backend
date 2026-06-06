@@ -72,37 +72,7 @@ If the answer creates a potential objection:
    * Channel conflict
    * Absolute prohibition
 
-Example responses (truthful):
-
-Q: "Do you sell on Amazon?"
-A: "Yes, we do. Can I ask what your concern is? Are you worried about channel conflict, MAP pricing issues, or unauthorized sellers?"
-
-Q: "Are you an Amazon seller?"
-A: "We do have Amazon operations, yes. Can you help me understand what that means for your distribution model?"
-
-Q: "Do you operate on multiple channels?"
-A: "We do - that's part of our distribution strategy. What specific restrictions do you have, and is there flexibility there?"
-
-NEVER:
-✗ "No, we're not on Amazon" (if you are)
-✗ "We don't sell on marketplaces" (if you do)
-✗ "We only work directly with distributors" (if you sell direct)
-✗ Invent a story to avoid the question
-✗ Dance around the truth
-
-TRUST IS FOUNDATION:
-A distributor who learns you lied will:
-- Never trust you again
-- Tell other suppliers
-- Damage Vortex reputation permanently
-
-A distributor who knows you're honest will:
-- Either work with you (if compatible)
-- Or politely decline (if not compatible)
-- Respect you either way
-- Refer you to others
-
-Honesty filters for the right partnerships.
+Never hide Amazon activity. Never deny Amazon activity if it exists.
 `;
 
 const DISTRIBUTOR_INQUIRY_SYSTEM = `
@@ -190,63 +160,6 @@ Pause ALL of:
 
 Resolve Amazon Restriction First.
 
-Only return to normal discovery after:
-- Distributor's concern is fully understood
-- Policy classification determined (Absolute Ban / MAP / Pricing / Channel Conflict / Case-by-Case)
-- Path forward agreed (if any)
-
-MISSION TRACKING RULE:
-Before generating a response, review the conversation history and determine which items have already been collected.
-
-Track:
-* Documents Required
-* MOQ
-* Approval Timeline
-* Payment Terms
-* Product Categories
-* Ordering Process
-* Freight Terms
-* Compliance Requirements
-* Volume Discounts
-* Next Steps
-* Amazon Policy (HIGH PRIORITY if mentioned)
-
-CRITICAL RULES:
-1. TRUTH RULE OVERRIDES ALL: Answer truthfully about Amazon/marketplace operations
-2. Never ask for information that has already been collected.
-3. If AMAZON QUESTION detected: PAUSE all other discovery. Focus on Amazon restriction.
-4. If information is missing: → Ask for the highest-priority missing item.
-5. If all required information has been collected: → Stop discovery. → Recommend professionally closing the call.
-
-MISSION COMPLETE CONDITIONS:
-When ALL of these are collected:
-✓ Documents Required
-✓ MOQ
-✓ Approval Timeline
-✓ Payment Terms
-✓ Ordering Process
-✓ Freight Terms
-✓ Next Steps
-✓ Amazon Policy (if asked and addressed)
-
-Output a professional close instead of another question.
-
-Example close:
-"I think I have everything I need. I'll get the application and supporting documents over to you by tomorrow morning. Thanks for walking me through the process."
-
-RED FLAG DETECTION:
-Immediately prioritize clarification if the distributor mentions:
-
-* Marketplace restrictions (HIGHEST PRIORITY - PAUSE DISCOVERY)
-* Amazon restrictions (HIGHEST PRIORITY - PAUSE DISCOVERY)
-* Annual purchase minimums
-* Exclusivity requirements
-* Geographic restrictions
-* Required supplier references
-* MAP enforcement
-
-Ask follow-up questions about these items BEFORE moving on to other topics.
-
 ANTI-REPETITION RULE:
 NEVER start consecutive responses with:
 - Perfect
@@ -262,23 +175,6 @@ Vary acknowledgements:
 - Makes sense
 - Got it
 - That works
-
-REAL-TIME GUIDANCE:
-If AMAZON QUESTION detected:
-→ PAUSE normal discovery immediately
-→ ANSWER TRUTHFULLY about Amazon operations
-→ Focus on understanding the restriction type
-→ Do not continue to MOQ, payment terms, etc. until clarified
-
-If information is missing (non-Amazon):
-→ Tell user exactly what question to ask next based on priority order.
-
-If all required information is collected:
-→ Generate professional closing statement.
-
-If RED FLAGS detected (non-Amazon):
-→ STOP normal discovery flow.
-→ Ask clarifying questions about the red flag FIRST.
 
 LANGUAGE:
 - Avoid repetitive acknowledgements
@@ -331,7 +227,6 @@ DO NOT:
 
 CONVERSATION STYLE:
 Retail Inquiry = Discovery First
-
 You are learning:
 * How they distribute
 * Whether they want new partners
@@ -341,21 +236,11 @@ You are learning:
 ANTI-INTERROGATION RULE:
 Never ask more than one major qualification question at a time.
 
-Bad: "What are your MOQs, payment terms, lead times and approval process?"
-Good: "Can you tell me a little about how you currently work with wholesale partners?"
-
 Make it conversational. Natural flow. One discovery point per response.
 
 TRUTH RULE (CRITICAL):
 If asked about Amazon/marketplace operations:
 Answer truthfully. Never deny or invent.
-
-If they have restrictions:
-Acknowledge → Clarify concern → Determine if negotiable
-
-Example:
-Q: "Do you sell on Amazon?"
-A: "Yes, we do. Is that a concern for you?"
 
 RED FLAG HANDLING:
 If they mention:
@@ -368,34 +253,6 @@ If they mention:
 Pause normal discovery.
 Answer truthfully about your operations.
 Clarify the restriction completely before continuing.
-
-MARKETPLACE POLICY (CRITICAL):
-If they ask about or mention:
-* "Do you sell on Amazon?"
-* "Are you on Amazon?"
-* "We don't work with Amazon sellers"
-* "No marketplace sellers"
-
-This is a RED FLAG. Handle with transparency:
-1. Acknowledge the concern (truthfully)
-2. Ask clarifying questions about their policy
-3. Understand if it's absolute or negotiable
-4. Determine if Vortex is a fit
-
-Example response (TRUTHFUL):
-"Yes, we do have Amazon operations. Can you help me understand your policy? Are you looking to avoid marketplace conflicts, or do you have a blanket policy on Amazon sellers?"
-
-MISSION COMPLETE WHEN:
-You know:
-✓ Yes or No for wholesale opportunity
-✓ Decision maker (name, title)
-✓ Approval path (timeline, documents, who decides)
-✓ Next action (send application, call back, meeting scheduled)
-
-Then recommend closing professionally.
-
-Example close:
-"This has been really helpful. I think there's a real opportunity here. Let me follow up with the application and supporting documents by tomorrow. Does that work?"
 
 ANTI-REPETITION RULE:
 NEVER start consecutive responses with:
@@ -412,21 +269,6 @@ Vary acknowledgements:
 - Got it
 - That's helpful
 
-REAL-TIME GUIDANCE:
-If missing information:
-→ Ask ONE discovery question at a time
-→ Follow priority order
-→ Make it conversational, not interrogatory
-
-If all info gathered:
-→ Generate professional closing statement
-
-If RED FLAGS detected:
-→ PAUSE other discovery
-→ Answer truthfully
-→ Clarify the restriction fully
-→ Determine if fit is possible
-
 LANGUAGE:
 - Sound like a partnership-minded buyer
 - Be curious, not interrogative
@@ -439,26 +281,133 @@ LANGUAGE:
 
 const CALL_INSTRUCTIONS = {
   distributor_inquiry: DISTRIBUTOR_INQUIRY_SYSTEM,
-  
   quick_note: `
 TARGET: Brand you want to buy from.
 GOAL: Learn if they're open to wholesale partnerships.
 DISCOVERY: Their approval process, requirements, MOQ, decision maker.
 TONE: Professional buyer evaluating partnership fit.
   `,
-  
   brand_registry: `
 TARGET: Brand with unprotected Amazon presence.
 GOAL: Position as wholesale buyer + Amazon manager.
 DISCOVERY: Current Amazon situation, Brand Registry status, interest level.
 TONE: Helpful professional who sees an opportunity.
   `,
-  
   retail_inquiry: RETAIL_INQUIRY_SYSTEM
 };
 
+// LIVE INTELLIGENCE TRACKING SYSTEM
+const analyzeCallState = async (conversationHistory, callType) => {
+  if (!conversationHistory || conversationHistory.length === 0) {
+    return {
+      collected: {},
+      missing: [
+        'Documents Required',
+        'MOQ',
+        'Approval Timeline',
+        'Payment Terms',
+        'Product Categories',
+        'Ordering Process',
+        'Freight Terms',
+        'Compliance Requirements',
+        'Volume Discounts',
+        'Next Steps'
+      ],
+      redFlags: [],
+      highestPriorityMissing: 'Documents Required',
+      completionPercentage: 0
+    };
+  }
+
+  // Build transcript for analysis
+  let transcript = "";
+  conversationHistory.forEach(item => {
+    transcript += `${item.speaker === 'contact' ? 'CONTACT' : 'SANAULLAH'}: ${item.text}\n`;
+  });
+
+  // Use Claude to analyze state
+  const analysisPrompt = `
+Analyze this call conversation and identify:
+
+1. What information has been COLLECTED (from the contact):
+   - Documents Required
+   - MOQ
+   - Approval Timeline
+   - Payment Terms
+   - Product Categories
+   - Ordering Process
+   - Freight Terms
+   - Compliance Requirements
+   - Volume Discounts
+   - Next Steps
+
+2. What information is MISSING
+
+3. RED FLAGS detected:
+   - Amazon restriction
+   - Marketplace restriction
+   - Geographic restriction
+   - Exclusivity requirement
+   - MAP enforcement concern
+   - Distributor conflict
+   - No new accounts
+   - Large MOQ concern
+   - Payment term concern
+
+4. Highest priority MISSING item (based on priority order)
+
+Conversation:
+${transcript}
+
+Return ONLY valid JSON:
+{
+  "collected": {
+    "documents_required": "string or null",
+    "moq": "string or null",
+    "approval_timeline": "string or null",
+    "payment_terms": "string or null",
+    "product_categories": "string or null",
+    "ordering_process": "string or null",
+    "freight_terms": "string or null",
+    "compliance_requirements": "string or null",
+    "volume_discounts": "string or null",
+    "next_steps": "string or null"
+  },
+  "missing": ["array of missing items"],
+  "red_flags": ["array of red flags detected"],
+  "red_flag_details": "string describing red flag context",
+  "highest_priority_missing": "string",
+  "mission_complete": true/false,
+  "completion_percentage": 0-100,
+  "should_pause_discovery": true/false,
+  "pause_reason": "string or null"
+}`;
+
+  try {
+    const message = await client.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 1000,
+      messages: [
+        {
+          role: "user",
+          content: analysisPrompt
+        }
+      ]
+    });
+
+    const responseText = message.content[0].type === "text" ? message.content[0].text : "{}";
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    const analysis = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+    
+    return analysis;
+  } catch (error) {
+    console.error("State analysis error:", error);
+    return { collected: {}, missing: [], redFlags: [], error: true };
+  }
+};
+
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", message: "Vortex Live Call Copilot v7 - Truth Rule Foundation" });
+  res.json({ status: "ok", message: "Vortex Live Call Copilot v8 - Live Intelligence Tracking" });
 });
 
 app.post("/api/analyze-live", async (req, res) => {
@@ -469,7 +418,10 @@ app.post("/api/analyze-live", async (req, res) => {
       return res.status(400).json({ error: "Transcript required" });
     }
 
-    // Build conversation context
+    // STEP 1: Analyze call state (internal tracking)
+    const callState = await analyzeCallState(conversationHistory, callType);
+
+    // STEP 2: Build conversation context
     let context = "";
     if (conversationHistory && conversationHistory.length > 0) {
       context = "Conversation so far:\n";
@@ -479,6 +431,33 @@ app.post("/api/analyze-live", async (req, res) => {
       context += "\n";
     }
 
+    // STEP 3: Build internal state summary (for Claude's context only, not for user)
+    const internalState = `
+INTERNAL STATE TRACKING (DO NOT SHOW TO USER):
+
+COLLECTED INFORMATION:
+${Object.entries(callState.collected || {})
+  .filter(([_, v]) => v !== null)
+  .map(([k, v]) => `✓ ${k}: ${v}`)
+  .join('\n') || 'None yet'}
+
+MISSING INFORMATION:
+${(callState.missing || []).map(item => `- ${item}`).join('\n') || 'None'}
+
+RED FLAGS DETECTED:
+${(callState.redFlags || []).length > 0 ? callState.redFlags.map(flag => `⚠ ${flag}`).join('\n') : 'None'}
+${callState.red_flag_details ? `\nContext: ${callState.red_flag_details}` : ''}
+
+MISSION PROGRESS: ${callState.completion_percentage || 0}%
+
+HIGHEST PRIORITY MISSING: ${callState.highest_priority_missing || 'N/A'}
+
+DISCOVERY SHOULD PAUSE: ${callState.should_pause_discovery ? `YES - ${callState.pause_reason}` : 'NO'}
+
+MISSION COMPLETE: ${callState.mission_complete ? 'YES - Time to close' : 'NO - Continue discovery'}
+
+---`;
+
     const instruction = CALL_INSTRUCTIONS[callType] || CALL_INSTRUCTIONS.distributor_inquiry;
 
     const message = await client.messages.create({
@@ -487,7 +466,9 @@ app.post("/api/analyze-live", async (req, res) => {
       messages: [
         {
           role: "user",
-          content: `${TRUTH_RULE}
+          content: `${internalState}
+
+${TRUTH_RULE}
 
 ${VORTEX_PROFILE}
 
@@ -498,53 +479,37 @@ ${context}Contact just said: "${transcript}"
 You are Sanaullah's live call copilot.
 Your ONLY job: Tell him what to say next.
 
-CRITICAL: 
-TRUTH RULE OVERRIDES ALL OTHER RULES.
-If asked about Amazon/marketplace operations: Answer truthfully.
-Never deny. Never invent. Never hide.
+CURRENT SITUATION:
+- Collected: ${Object.keys(callState.collected || {}).filter(k => callState.collected[k] !== null).length} items
+- Missing: ${(callState.missing || []).length} items
+- Red Flags: ${(callState.redFlags || []).length}
+- Mission Progress: ${callState.completion_percentage || 0}%
 
-BEFORE RESPONDING:
-1. CHECK: Is this an Amazon/marketplace question?
-2. If YES: Answer truthfully first, then clarify their concern
-3. Identify call type requirements
-4. Review conversation history
-5. Identify which mission items have been collected
-6. Identify which are missing (by priority)
-7. Check for RED FLAGS
-8. If RED FLAGS: Handle with transparent response
-9. If all required items collected: Generate professional closing
-10. If items missing: Ask for highest-priority missing item
+GUIDANCE:
+${callState.should_pause_discovery ? `PAUSE normal discovery. Focus on: ${callState.pause_reason}` : callState.mission_complete ? 'All information collected. Time to close professionally.' : `Next priority: Gather ${callState.highest_priority_missing}`}
 
-CRITICAL RULES:
-1. TRUTH RULE OVERRIDES ALL: Answer truthfully about Amazon/marketplace operations
-2. Answer their question first (never dodge)
-3. Answer clearly and professionally
-4. Sound like a real person, not a script
-5. Sound like a professional wholesale buyer
-6. Use whatever length is necessary
-7. FOLLOW ANTI-REPETITION RULE
-8. USE CONFIDENT LANGUAGE about Vortex
-9. FOLLOW QUESTION PRIORITY ORDER
-10. NEVER ask for information already collected
-11. DETECT RED FLAGS and prioritize them
-12. HANDLE AMAZON/MARKETPLACE QUESTIONS with honesty
-13. GENERATE PROFESSIONAL CLOSE when mission is complete
-14. For Retail Inquiry: Be conversational, one discovery point per response
-15. For Distributor Inquiry: Be transactional, gather all required info
+RULES:
+1. TRUTH RULE OVERRIDES ALL
+2. Answer their question first
+3. Follow call state guidance
+4. Don't ask for already-collected info
+5. Pause for red flags
+6. Close when mission complete
 
 OUTPUT ONLY:
 
 SAY NOW:
-[Exact words Sanaullah should say. Nothing else.]
-
-Do not explain. Do not coach. Just tell him what to say.`
+[Exact words Sanaullah should say. Nothing else.]`
         }
       ]
     });
 
     const guidance = message.content[0].type === "text" ? message.content[0].text : "";
 
-    res.json({ guidance });
+    res.json({ 
+      guidance,
+      _callState: callState // Internal tracking (for debugging only, not sent to frontend)
+    });
   } catch (error) {
     console.error("Claude API error:", error);
     res.status(500).json({ error: "Failed to generate response", details: error.message });
@@ -559,6 +524,9 @@ app.post("/api/call-summary", async (req, res) => {
     if (!conversationHistory || conversationHistory.length === 0) {
       return res.status(400).json({ error: "Conversation history required" });
     }
+
+    // Get final state
+    const finalState = await analyzeCallState(conversationHistory, callType);
 
     // Build transcript
     let transcript = "";
@@ -592,6 +560,7 @@ For Retail Inquiry, return:
   "red_flags": [],
   "partnership_fit": "good/fair/poor",
   "next_step": "string",
+  "call_duration_seconds": ${callDuration},
   "conversational_quality": 0-10,
   "discovery_effectiveness": 0-10,
   "credibility_score": 0-10,
@@ -603,25 +572,26 @@ For Distributor Inquiry, return:
 {
   "call_type": "distributor_inquiry",
   "mission_success": true/false,
-  "mission_complete": true/false,
+  "mission_complete": ${finalState.mission_complete},
+  "completion_percentage": ${finalState.completion_percentage || 0},
   "account_opening_likelihood": "high/medium/low",
-  "documents_required": [],
-  "moq": "string",
-  "payment_terms": "string",
-  "approval_timeline": "string",
-  "freight_terms": "string",
-  "ordering_process": "string",
-  "product_categories": [],
-  "compliance_requirements": [],
-  "volume_discounts": "string",
-  "next_steps": [],
+  "documents_required": "${finalState.collected?.documents_required || 'unknown'}",
+  "moq": "${finalState.collected?.moq || 'unknown'}",
+  "payment_terms": "${finalState.collected?.payment_terms || 'unknown'}",
+  "approval_timeline": "${finalState.collected?.approval_timeline || 'unknown'}",
+  "freight_terms": "${finalState.collected?.freight_terms || 'unknown'}",
+  "ordering_process": "${finalState.collected?.ordering_process || 'unknown'}",
+  "product_categories": "${finalState.collected?.product_categories || 'unknown'}",
+  "compliance_requirements": "${finalState.collected?.compliance_requirements || 'unknown'}",
+  "volume_discounts": "${finalState.collected?.volume_discounts || 'unknown'}",
+  "next_steps": "${finalState.collected?.next_steps || 'unknown'}",
   "amazon_question_asked": true/false,
   "amazon_answer_truthful": true/false,
   "amazon_restriction_type": "none/absolute_ban/map_concern/pricing_concern/channel_conflict/case_by_case/unknown",
   "amazon_restriction_clarified": true/false,
-  "amazon_policy_understood": "string",
   "is_fit_for_account": "yes/no/conditional",
-  "red_flags_detected": [],
+  "red_flags_detected": ${JSON.stringify(finalState.redFlags || [])},
+  "call_duration_seconds": ${callDuration},
   "professionalism_score": 0-10,
   "information_gathering_score": 0-10,
   "efficiency_score": 0-10,
@@ -644,8 +614,6 @@ For Distributor Inquiry, return:
     });
 
     const responseText = message.content[0].type === "text" ? message.content[0].text : "{}";
-    
-    // Extract JSON from response
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     const summary = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
 
@@ -658,10 +626,10 @@ For Distributor Inquiry, return:
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log(`✅ Vortex Live Call Copilot v7 running on port ${PORT}`);
-  console.log(`✓ TRUTH RULE - Foundation of all interactions`);
-  console.log(`✓ Distributor Inquiry System Active`);
-  console.log(`✓ Retail Inquiry System Active`);
-  console.log(`✓ Honest Amazon Handling`);
-  console.log(`✓ Trust-Based Filtering`);
+  console.log(`✅ Vortex Live Call Copilot v8 running on port ${PORT}`);
+  console.log(`✓ LIVE INTELLIGENCE TRACKING - Internal State Engine`);
+  console.log(`✓ Real-time Mission Progress Tracking`);
+  console.log(`✓ Red Flag Detection & Pause Logic`);
+  console.log(`✓ Completion Percentage Calculation`);
+  console.log(`✓ Highest Priority Missing Item Routing`);
 });
