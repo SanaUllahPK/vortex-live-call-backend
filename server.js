@@ -72,8 +72,8 @@ const OPENING_SCRIPTS = {
 "Hey [Name], thanks for picking up. I'm Sanaullah with Vortex Origin Brands, 
 a Wyoming-based wholesale company. We work with established suppliers across 
 consumer product categories and we're currently expanding our supplier network. 
-Before I take up too much of your time, what does your typical process look 
-like for setting up a new wholesale account?"
+Before I take up too much of your time, what does your typical process 
+look like for setting up a new wholesale account?"
   `,
   
   quick_note: `
@@ -116,11 +116,6 @@ DISCOVERY STAGES (in order):
 6. Verification - Payment terms? Shipping?
 
 TONE: Professional buyer. You have buying power. You're evaluating fit.
-
-INTRODUCTION:
-"We're Vortex Origin Brands, a Wyoming-based wholesale company. We work with 
-established suppliers across consumer product categories and we're currently 
-expanding our supplier network."
   `,
   
   quick_note: `
@@ -129,11 +124,6 @@ expanding our supplier network."
 TARGET: Brands you want to buy from at wholesale.
 
 GOAL: Learn if they're open to wholesale partnerships. What's their process?
-
-INTRODUCTION:
-"We're Vortex Origin Brands, a Wyoming-based wholesale company expanding our 
-supplier network. Do you handle wholesale accounts, or is there someone on your 
-team I should talk to?"
 
 KEY DISCOVERY:
 - Wholesale interest?
@@ -150,12 +140,6 @@ TARGET: Brands with unprotected Amazon presence.
 
 GOAL: Help them see Amazon opportunity. Understand current situation.
 
-INTRODUCTION:
-"I'm Sanaullah with Vortex Origin Brands. I came across your products on Amazon 
-and noticed you've got multiple third-party sellers offering them. I run a 
-wholesale operation and we help brands protect and properly represent themselves 
-on Amazon. Do you have a few minutes?"
-
 KEY DISCOVERY:
 - Brand Registry status?
 - Current Amazon challenges?
@@ -168,15 +152,9 @@ KEY DISCOVERY:
 
 TARGET: Brands that don't want Amazon.
 
-**NEVER MENTION AMAZON unless they bring it up.**
+NEVER MENTION AMAZON unless they bring it up.
 
 GOAL: Position as retail purchasing partner.
-
-INTRODUCTION:
-"I'm Sanaullah with Vortex Origin Brands, a Wyoming-based retail and distribution 
-business. We work with a select group of suppliers and focus on consistent, 
-reliable ordering and proper brand representation. I came across your company 
-and was impressed. Do you work with wholesale partners?"
 
 KEY DISCOVERY:
 - Current distribution?
@@ -201,7 +179,7 @@ app.post("/api/analyze-live", async (req, res) => {
     if (conversationHistory && conversationHistory.length > 0) {
       context = "Conversation so far:\n";
       conversationHistory.forEach(item => {
-        context += `${item.speaker === 'supplier' ? 'Contact' : 'Sanaullah'}: ${item.text}\n`;
+        context += `${item.speaker === 'contact' ? 'Contact' : 'Sanaullah'}: ${item.text}\n`;
       });
       context += "\n";
     }
