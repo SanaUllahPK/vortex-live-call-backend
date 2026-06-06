@@ -2,7 +2,6 @@ import Anthropic from "@anthropic-ai/sdk";
 import express from "express";
 import cors from "cors";
 import { createClient } from "@supabase/supabase-js";
-import { google } from "googleapis";
 
 const app = express();
 app.use(express.json());
@@ -12,23 +11,17 @@ const client = new Anthropic({
   apiKey: process.env.CLAUDE_API_KEY,
 });
 
-// SUPABASE CLIENT
+// SUPABASE CLIENT (using existing variable names)
 const supabase = createClient(
-  process.env.SUPABASE_PROJECT_URL,
-  process.env.SUPABASE_ANON_KEY
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY
 );
 
 // SUPABASE ADMIN CLIENT (for writes)
 const supabaseAdmin = createClient(
-  process.env.SUPABASE_PROJECT_URL,
+  process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
-
-// GOOGLE SHEETS CLIENT
-const sheets = google.sheets({ version: "v4", auth: new google.auth.GoogleAuth({
-  keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS,
-  scopes: ["https://www.googleapis.com/auth/spreadsheets"]
-})});
 
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 
@@ -114,7 +107,7 @@ app.post("/api/supplier/load", async (req, res) => {
     });
   } catch (error) {
     console.error("Error loading supplier:", error);
-    res.status(500).json({ error: "Failed to load supplier" });
+    res.status(500).json({ error: "Failed to load supplier", details: error.message });
   }
 });
 
@@ -262,54 +255,6 @@ Generate ONLY JSON (no markdown, no backticks):
 });
 
 // ════════════════════════════════════════
-// PRIORITY 3: GOOGLE SHEETS SYNC
-// ════════════════════════════════════════
-
-app.post("/api/sheets/sync-suppliers", async (req, res) => {
-  try {
-    // Load all suppliers from Supabase
-    const { data: suppliers } = await supabase
-      .from("suppliers")
-      .select("*")
-      .order("last_updated", { ascending: false });
-
-    if (!suppliers) {
-      return res.status(400).json({ error: "No suppliers found" });
-    }
-
-    // Format for Google Sheets
-    const rows = suppliers.map(s => [
-      s.supplier_id,
-      s.company_name,
-      s.website || "",
-      s.category || "",
-      s.subcategory || "",
-      s.relationship_status || "New",
-      s.approval_likelihood || "Low",
-      s.last_contact_date || "",
-      s.next_follow_up_date || "",
-      s.total_interactions || 0,
-      s.notes || ""
-    ]);
-
-    // Write to Google Sheets
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: SHEET_ID,
-      range: "SUPPLIERS!A2:K1000",
-      valueInputOption: "RAW",
-      resource: {
-        values: rows
-      }
-    });
-
-    res.json({ success: true, rows_synced: rows.length });
-  } catch (error) {
-    console.error("Error syncing to sheets:", error);
-    res.status(500).json({ error: "Failed to sync to sheets" });
-  }
-});
-
-// ════════════════════════════════════════
 // PRIORITY 4: GET ALL SUPPLIERS (Dashboard)
 // ════════════════════════════════════════
 
@@ -319,34 +264,42 @@ app.get("/api/suppliers/dashboard", async (req, res) => {
 
     let query = supabase
       .from("suppliers")
-      .select("supplier_id, company_name, relationship_status, approval_likelihood, last_contact_date, next_follow_up_date, total_interactions");
+      .select("supplier_id, company_name, relationship_status, approval_likelihood, last_contact_date, next_follow_up_date, total_interactions, moq, approval_timeline, required_documents, payment_terms, shipping_policy, catalog_available");
 
-    if (status) {
+    if (status && status !== 'all') {
       query = query.eq("relationship_status", status);
     }
 
-    const { data: suppliers } = await query.order(
+    const { data: suppliers, error } = await query.order(
       sort === "follow_up" ? "next_follow_up_date" : "last_contact_date",
       { ascending: false }
     );
 
+    if (error) {
+      return res.status(500).json({ error: "Failed to load suppliers", details: error.message });
+    }
+
     // Get missing info for each supplier
-    const suppliersWithMissing = await Promise.all(
-      suppliers.map(async (s) => {
-        const missingInfo = [];
-        if (!s.moq) missingInfo.push("MOQ");
-        if (!s.approval_timeline) missingInfo.push("Timeline");
-        if (!s.required_documents) missingInfo.push("Docs");
-        if (!s.payment_terms) missingInfo.push("Payment");
-        if (!s.shipping_policy) missingInfo.push("Shipping");
-        
-        return {
-          ...s,
-          missing_count: missingInfo.length,
-          missing_info: missingInfo.join(", ")
-        };
-      })
-    );
+    const suppliersWithMissing = (suppliers || []).map(s => {
+      const missingInfo = [];
+      if (!s.moq) missingInfo.push("MOQ");
+      if (!s.approval_timeline) missingInfo.push("Timeline");
+      if (!s.required_documents) missingInfo.push("Docs");
+      if (!s.payment_terms) missingInfo.push("Payment");
+      if (!s.shipping_policy) missingInfo.push("Shipping");
+      
+      return {
+        supplier_id: s.supplier_id,
+        company_name: s.company_name,
+        relationship_status: s.relationship_status,
+        approval_likelihood: s.approval_likelihood,
+        last_contact_date: s.last_contact_date,
+        next_follow_up_date: s.next_follow_up_date,
+        total_interactions: s.total_interactions,
+        missing_count: missingInfo.length,
+        missing_info: missingInfo.join(", ")
+      };
+    });
 
     res.json({
       suppliers: suppliersWithMissing,
@@ -354,7 +307,7 @@ app.get("/api/suppliers/dashboard", async (req, res) => {
     });
   } catch (error) {
     console.error("Error loading dashboard:", error);
-    res.status(500).json({ error: "Failed to load dashboard" });
+    res.status(500).json({ error: "Failed to load dashboard", details: error.message });
   }
 });
 
@@ -383,13 +336,13 @@ app.post("/api/analyze-live", async (req, res) => {
     let memoryContext = "";
     if (supplierProfile) {
       memoryContext = `SUPPLIER MEMORY:
-Supplier: ${supplierProfile.company_name}
-Status: ${supplierProfile.relationship_status}
-Known: ${Object.entries(supplierProfile.known_information)
+Supplier: ${supplierProfile.supplier.company_name}
+Status: ${supplierProfile.supplier.relationship_status}
+Known: ${Object.entries(supplierProfile.known_information || {})
   .filter(([k, v]) => v)
   .map(([k, v]) => `${k}: ${v}`)
   .join(", ") || "None yet"}
-Missing: ${supplierProfile.missing_information.join(", ") || "All collected"}
+Missing: ${(supplierProfile.missing_information || []).join(", ") || "All collected"}
 
 RULE: Do not ask about known information. Prioritize discovering missing information.
 When enough information is gathered, stop asking questions. Summarize and confirm next steps.
@@ -430,7 +383,7 @@ SAY NOW:
     res.json({ guidance });
   } catch (error) {
     console.error("Claude API error:", error);
-    res.status(500).json({ error: "Failed to generate response" });
+    res.status(500).json({ error: "Failed to generate response", details: error.message });
   }
 });
 
