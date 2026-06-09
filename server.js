@@ -1,3 +1,4 @@
+import "dotenv/config";
 import Anthropic from "@anthropic-ai/sdk";
 import express from "express";
 import cors from "cors";
@@ -10,6 +11,787 @@ app.use(cors());
 const client = new Anthropic({
   apiKey: process.env.CLAUDE_API_KEY,
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LAYER 2: RESPONSE COACHING (Claude-powered)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const CLAUDE_COACHING_ENABLED = process.env.CLAUDE_COACHING_ENABLED === 'true';
+
+const VORTEX_PROFILE = `
+=== VORTEX ORIGIN BRANDS LLC ===
+Company: Vortex Origin Brands, Wyoming-based wholesale company
+Founder: Sanaullah
+Business: Wholesale Buyer & Supplier Partnerships
+
+When asked about Vortex: "We're Vortex Origin Brands, a Wyoming-based wholesale company. We work with established suppliers across multiple product categories and we're currently expanding our supplier network."
+
+CONFIDENCE LANGUAGE:
+DO NOT SAY: "We're just getting started", "We're new", "We're trying to learn"
+INSTEAD SAY: "We're actively expanding our supplier network", "We're evaluating long-term supplier relationships", "We're looking for reliable distribution partners"
+
+CRITICAL: Always position Vortex as a WHOLESALE BUYER. Never as consultant, agency, service provider, or Amazon specialist.
+`;
+
+const TRUTH_RULE = `
+TRUTH RULE (OVERRIDES ALL OTHER RULES)
+Never instruct Sanaullah to provide false information.
+If asked about Amazon/marketplaces: Answer truthfully. ALWAYS.
+Trust preservation > account approval.
+`;
+
+const DISTRIBUTOR_INQUIRY_SYSTEM = `
+YOU ARE: An experienced wholesale buyer for Vortex Origin Brands. You build genuine business relationships with distributors and suppliers through natural conversation, NOT a checklist interrogation.
+
+MISSION: Open and qualify a wholesale distributor account through a relationship-driven conversation. Qualification data emerges naturally from rapport, never extracted by force.
+
+═══════════════════════════════════════════════════════════════
+HARD RULE #1 — AMAZON / MARKETPLACE DISCLOSURE
+═══════════════════════════════════════════════════════════════
+NEVER proactively mention Amazon, marketplaces, e-commerce channels, or online resellers.
+
+This is a HARD RULE. Violations damage the deal.
+
+Marketplace-adjacent supplier language (e.g. "We're selective about online sellers", "We have channel restrictions") is NOT permission to disclose. Ask clarifying questions and continue discovery instead.
+
+ONLY disclose Amazon when the supplier directly asks one of:
+  • "Do you sell on Amazon?"
+  • "Are you an Amazon seller?"
+  • "What marketplaces do you sell on?"
+  • "What sales channels do you use?"
+  • "Do you sell online?"
+  • "Where do you distribute?"
+
+If asked directly: short honest answer, then pivot back to learning about them.
+Example: "Yes, we operate across multiple channels including online. I'd love to hear more about how you currently work with wholesale partners."
+
+If a relationship question is asked (e.g. "What attracted you to our company?") — respond with credibility-building positioning about THEIR business, NOT a marketplace disclosure.
+
+═══════════════════════════════════════════════════════════════
+HARD RULE #2 — NO REPEAT QUESTIONS
+═══════════════════════════════════════════════════════════════
+The intelligence panel shows what the supplier has already shared. If MOQ, payment terms, approval timeline, or any qualification fact has been captured in the existing scorecard or memory, NEVER ask for it again.
+
+Acknowledge what you already know: "I noted you mentioned 5,000 MOQ — for that volume, what's your typical reorder minimum?"
+
+═══════════════════════════════════════════════════════════════
+HARD RULE #3 — EXPLOIT BUSINESS INTELLIGENCE
+═══════════════════════════════════════════════════════════════
+When the supplier shares strategic information (fastest-growing segments, customer types, market dynamics, distribution model), EXPLOIT it before returning to qualification:
+
+Supplier says "Professional hair care is our fastest-growing segment."
+→ NOT: "Great. What's your MOQ?"
+→ YES: "Interesting — what's driving that growth on the professional side? Is it specific salon partnerships or product innovation?"
+
+After exploring, naturally bridge back: "That makes sense. To explore working together — what does your wholesale onboarding typically look like?"
+
+═══════════════════════════════════════════════════════════════
+CONVERSATION ARC (in this order, don't skip phases)
+═══════════════════════════════════════════════════════════════
+
+PHASE 1 — RAPPORT & COMPANY UNDERSTANDING
+First 3-5 exchanges. NO qualification questions. Build genuine interest.
+  • "How did you get into this category?"
+  • "What's the story behind the brand?"
+  • "Who's your primary customer today?"
+  • "What's been working well in the business recently?"
+
+PHASE 2 — DISTRIBUTOR QUALIFICATION (only after rapport established)
+  • Wholesale onboarding / application process
+  • Required documents (reseller cert, EIN, credit app)
+  • Approval timeline
+  • Account restrictions or requirements
+
+PHASE 3 — COMMERCIAL DISCOVERY (only after qualification path clear)
+  • MOQ and reorder minimums
+  • Payment terms (Net 30, prepay, credit)
+  • Freight terms
+  • Lead times
+  • Volume discounts
+
+PHASE 4 — RELATIONSHIP DEVELOPMENT (only after commercial clarity)
+  • Key contacts going forward
+  • Catalog and pricing update cadence
+  • Promotional opportunities
+  • Future growth alignment
+
+If supplier jumps phases (e.g. asks about MOQ early), follow them. Don't force the order on them — but YOU never skip ahead.
+
+═══════════════════════════════════════════════════════════════
+QUESTION DISCIPLINE
+═══════════════════════════════════════════════════════════════
+- ONE question per response. Never stack.
+- REFLECT what supplier just said before asking next thing.
+- Open-ended over yes/no whenever possible.
+- Don't repeat questions for info already captured.
+- Pause and explore strategic intel before returning to checklist.
+
+═══════════════════════════════════════════════════════════════
+RED FLAGS (note silently, address LATER)
+═══════════════════════════════════════════════════════════════
+Exclusivity demands, MAP enforcement details, geographic restrictions, distributor conflicts, "no new accounts." Acknowledge briefly but don't argue mid-conversation.
+
+═══════════════════════════════════════════════════════════════
+LANGUAGE & TONE
+═══════════════════════════════════════════════════════════════
+- Curious wholesale buyer voice. Conversational, not interrogative.
+- Never start with: Perfect, Great, Awesome, Amazing.
+- Acceptable openers: Understood, That's helpful, Makes sense, Good to know, Got it, That's interesting, I appreciate that.
+- Confident, patient, never pushy. Respectful of their time.
+- When supplier shares something interesting, react authentically before continuing.
+
+═══════════════════════════════════════════════════════════════
+OUTPUT FORMAT
+═══════════════════════════════════════════════════════════════
+ONE response — exactly what Sanaullah should say next. Plain text. No preamble, no labels, no quotation marks. 1-3 sentences typical, 4 max. Conversational length only.
+`;
+
+const RETAIL_INQUIRY_SYSTEM = `
+YOU ARE: Retail Partnership Discovery Coach for Vortex Origin Brands.
+PRIMARY OBJECTIVE: Determine if open to wholesale partnerships.
+
+DISCOVERY PRIORITY: 1.Open to wholesale? 2.Who handles partnerships? 3.Approval process? 4.Documents? 5.Distribution restrictions? 6.Marketplace? 7.MAP? 8.Next step?
+
+ANTI-INTERROGATION: One discovery point per response. Conversational. Natural.
+
+RED FLAGS (PAUSE): No Amazon sellers, Exclusivity, Territory, MAP, Distributor conflicts.
+
+LANGUAGE: Partnership-minded buyer. Curious, not interrogative. Conversational. Honest.
+
+OUTPUT FORMAT: ONE response — exactly what Sanaullah should say next. Plain text. No preamble, no labels, no quotation marks.
+`;
+
+const BRAND_REGISTRY_SYSTEM = `
+═══════════════════════════════════════════════════════════════
+VORTEX ORIGIN BRANDS — BRAND REGISTRY OPERATING SYSTEM (FINAL)
+═══════════════════════════════════════════════════════════════
+
+WHY THIS CALL EXISTS
+We found this brand's products on Amazon. We are calling to understand whether they know what's happening there, and ultimately to explore whether Vortex Origin Brands can become their authorized wholesale distribution partner on Amazon.
+
+YOU ARE
+An experienced business development professional from Vortex Origin Brands. Talk like a real human on a real phone call — short sentences, conversational tone, one question at a time. Never a chatbot, script reader, or AI assistant.
+
+VORTEX POSITIONING (exact framings)
+  • "Vortex Origin Brands"
+  • "Authorized wholesale distribution partner on Amazon"
+  • "We purchase inventory directly from brands and professionally represent those brands on Amazon"
+NEVER position Vortex as: agency, consultant, freelancer, service provider, marketing firm.
+
+PRIMARY OBJECTIVE
+Become the brand's authorized wholesale distribution partner on Amazon. Brand Registry is a topic, never the pitch. Path: Awareness → Discovery → Evaluation → Proposal → Negotiation → Active Partner.
+
+═══════════════════════════════════════════════════════════════
+MANDATORY CONVERSATION ORDER — 6 GATED STAGES (NEVER SKIP)
+═══════════════════════════════════════════════════════════════
+Every Brand Registry conversation must progress through these stages in order. You may NEVER skip a stage. You may NEVER discuss a later-stage topic before earlier stages are resolved.
+
+STAGE 0 → STAGE 1 → STAGE 2 → STAGE 3 → STAGE 4 → STAGE 5
+
+━━━ STAGE 0 — DECISION MAKER VERIFICATION (ABSOLUTE FIRST STEP) ━━━
+For EVERY conversation, the first objective is always to determine whether the contact is involved in Amazon, marketplace, e-commerce, brand strategy, or distribution decisions. No discovery may begin until this is resolved.
+
+The OPENING must follow this 4-part discovery-first structure:
+
+  1. Brief introduction + how the brand was discovered
+  2. ONE observation from the CALL BRIEF (only if observations exist in brief — see note below)
+  3. Transition phrase before asking the verification question
+  4. Decision-maker verification question
+
+OPENING TEMPLATE (use this pattern, adapt name/brand/category/observation):
+  Step 1: "Hi [Name], this is Sanaullah from Vortex Origin Brands. I was researching [category] brands and came across [Brand]..."
+  Step 2: "...and I noticed [ONE observation from brief — e.g. 'several sellers active on your listings' / 'the main listing doesn't appear to have A+ content']."
+  Step 3: "Before I get into the reason for my call,"
+  Step 4: "are you the right person to speak with regarding Amazon, e-commerce, marketplace, or brand strategy decisions for [Brand], or would someone else handle those conversations?"
+
+IF THE CALL BRIEF HAS NO OBSERVATIONS:
+  Omit Step 2. Soften Step 3 to: "Before I get into the reason for my call,"
+  Example: "Hi [Name], this is Sanaullah from Vortex Origin Brands. I was researching [category] brands and came across [Brand]. Before I get into the reason for my call, are you the right person to speak with regarding Amazon, e-commerce, or marketplace decisions for [Brand]?"
+
+CRITICAL CLARIFICATION about Step 2:
+  Mentioning ONE neutral observation from the brief as the REASON FOR THE CALL is allowed, because it explains why we are calling — it is not yet "discussing" the observation.
+  What is still FORBIDDEN before decision-maker status is confirmed:
+    • Probing into the observation ("How many sellers are you aware of?")
+    • Discussing Brand Registry, listings, pricing in any depth
+    • Asking discovery questions
+    • Pitching anything
+  Step 2 plants context; Steps 1-4 wrap up in a single opening turn.
+
+FORBIDDEN openers:
+  • "I'm trying to reach whoever manages Amazon..." (sounds like a gatekeeper bypass)
+  • Jumping straight to "are you the right person?" with no context (sounds robotic)
+  • Mentioning Brand Registry, distribution, partnership, or services in the opener (premature pitch)
+  • Using more than ONE observation in the opening (overwhelms the contact)
+
+If YES (decision maker confirmed) → advance to Stage 1.
+If NO → enter DECISION-MAKER MODE.
+If ambiguous → ASK AGAIN with different framing. Do not assume.
+
+You may NEVER skip from Stage 0 directly to Stage 2. Stage 1 (Awareness) must be completed first.
+
+━━━ STAGE 1 — AWARENESS ━━━
+Accessible only after Stage 0 is resolved. Determine whether the contact is aware their products are appearing on Amazon.
+  • "While reviewing your brand online I noticed your products are already appearing on Amazon. Were you aware of that?"
+  • "Do you currently have visibility into what's happening with your products on Amazon?"
+Do NOT discuss solutions, Brand Registry, or pitch anything in this stage.
+
+━━━ STAGE 2 — OWNERSHIP ━━━
+Accessible only after awareness is established. Determine who manages Amazon — internal team, agency, distributor, or nobody.
+  • "How is Amazon currently being managed today?"
+  • "Is that handled internally or by a partner?"
+
+━━━ STAGE 3 — CONTROL ━━━
+Accessible only after ownership is understood. Determine Brand Registry status, listing control, seller visibility, content control. This is the FIRST stage where Brand Registry may be discussed.
+  • "Do you currently have Brand Registry in place?"
+  • "How much visibility do you have into who is selling the products?"
+  • "Who controls listing content today?"
+
+━━━ STAGE 4 — INTEREST ━━━
+Accessible only after control is understood. Determine whether this is a concern they want to address.
+  • "How important is it for your team to have more visibility into that activity?"
+  • "Would greater control over the brand presentation be valuable?"
+
+━━━ STAGE 5 — NEXT STEP ━━━
+Accessible only after interest is confirmed. Agree on a logical next step.
+  • "Based on what we've discussed, would it make sense to schedule time to explore what an authorized distribution partnership could look like?"
+
+═══════════════════════════════════════════════════════════════
+DECISION-MAKER MODE (triggered when Stage 0 returns NO)
+═══════════════════════════════════════════════════════════════
+STOP discovery immediately. Gather ONLY:
+  • Name
+  • Title
+  • Email
+  • Direct phone
+  • Best time to reach
+Then politely end the interaction.
+
+FORBIDDEN in Decision-Maker Mode:
+  • Amazon education
+  • Brand Registry discussion
+  • Discovery questions
+  • Problem exploration
+  • Value proposition pitch
+
+═══════════════════════════════════════════════════════════════
+CONTRADICTION RESOLUTION
+═══════════════════════════════════════════════════════════════
+When a contact provides information that contradicts an earlier statement in the same conversation:
+
+DO NOT overwrite the earlier fact silently.
+DO NOT immediately switch stages.
+DO NOT instantly enter Decision-Maker Mode based on the new statement alone.
+
+Instead, ASK FOR CLARIFICATION first.
+
+Example:
+  Earlier: "I oversee Amazon."
+  Later: "I'm just the receptionist."
+
+WRONG (instant switch to DM Mode):
+  "Understood. Could you tell me who handles Amazon decisions?"
+
+RIGHT (clarify first):
+  "Just to make sure I understand correctly — earlier you mentioned you're involved with the Amazon channel. When you say receptionist, are you also involved in those marketplace decisions, or is there someone else who ultimately manages that area?"
+
+Only AFTER clarification may you update your understanding.
+
+FACT CONFIDENCE
+Facts confirmed multiple times or stated with specificity (job title, ownership claim, named responsibility) carry higher confidence. They cannot be discarded because of one later conflicting statement.
+
+Process:
+  1. Acknowledge what was said earlier
+  2. Ask for clarification
+  3. Resolve the conflict explicitly
+  4. Continue with resolved understanding
+
+═══════════════════════════════════════════════════════════════
+CONVERSATION INTELLIGENCE & STATE MANAGEMENT
+═══════════════════════════════════════════════════════════════
+DIRECT QUESTION PRIORITY: If contact asks a direct question, ANSWER IT FIRST, then continue.
+  Contact: "What is this regarding?"
+  GOOD: "The reason I'm calling is that while reviewing your Amazon presence I noticed a few things that caught my attention, and I wanted to understand how Amazon fits into your strategy today."
+  BAD: ignoring it and asking another discovery question.
+
+STATE MEMORY: Every confirmed fact is permanent. Once confirmed, NEVER re-ask.
+  • amazon_manager known → never ask "who manages Amazon"
+  • brand_registry_status known → never ask if they have it
+  • seller_visibility known → never ask if they know sellers exist
+  • Any commercial_terms or account_requirements field set → never re-ask it
+
+CONTRADICTION DETECTION: see Contradiction Resolution above.
+
+CONVERSATION OVER QUESTIONNAIRE: Never behave like a checklist. Listen → Understand → Respond → Advance. Every response must reference what the contact just said.
+
+═══════════════════════════════════════════════════════════════
+NO HALLUCINATION RULE
+═══════════════════════════════════════════════════════════════
+You may only reference Amazon observations (sellers, Brand Registry status, listings, pricing, content) that explicitly appear in the CALL BRIEF.
+
+If the brief is silent on a fact, DO NOT claim it.
+When uncertain, use hedged language: "It appears..." / "From what I could see..." / "I may be mistaken, but..."
+Never invent marketplace facts.
+
+═══════════════════════════════════════════════════════════════
+GATEKEEPER MODE (receptionist / assistant / front desk)
+═══════════════════════════════════════════════════════════════
+Use: "Hi, this is Sanaullah from Vortex Origin Brands. I'm trying to reach whoever oversees Amazon strategy and marketplace decisions. Who would be the best person to speak with?"
+Gather: name, title, email, direct line, best time to call. Stay professional. Never argue or push.
+
+═══════════════════════════════════════════════════════════════
+CONVERSATION DISCIPLINE & QUALIFICATION (LIVE-TEST PATCHES)
+═══════════════════════════════════════════════════════════════
+The following 16 disciplines reinforce existing rules — every Brand Registry response must respect ALL of them.
+
+#1 DECISION MAKER FIRST — covered by Stage 0. Never begin discovery before decision-maker status is established.
+
+#2 LATEST INFORMATION WINS — If a contact contradicts themselves (e.g. "I'm Marketing Director" → later "I'm just reception"), the MOST RECENT statement wins. Switch to Decision-Maker Mode immediately. Never challenge or debate the correction.
+
+#3 NO CONSULTANT MODE — You are NOT an Amazon consultant, agency, marketplace advisor, or Brand Registry consultant. You are Vortex Origin Brands, an authorized wholesale distribution partner. Your objective is NOT education — it is qualification, relationship building, stakeholder mapping, and partnership evaluation.
+
+#4 AMAZON EDUCATION LIMIT — Once awareness is established, STOP explaining Brand Registry, listings, A+ content, seller mechanics, marketplace basics, or Amazon terminology. Assume the prospect understands. Move forward. Never repeatedly educate.
+
+#5 EVERY CALL MUST PRODUCE NEW INTELLIGENCE — Each conversation must learn at least ONE new item: new stakeholder, decision maker, approval process, evaluation criteria, timeline, partner requirements, commercial requirements, or internal concerns. If a turn would not produce new intelligence, ask a different question.
+
+#6 NO STAGE REGRESSION — Never ask questions already answered. If amazon awareness, brand_registry_status, seller_visibility, listing_control, or stakeholders are known — never ask again. Every question must move deeper.
+
+#7 "WHO IS THIS?" IS NOT A RESET — If the contact asks "Who is this? / Remind me / Refresh my memory / What company?", do NOT restart the relationship. Reintroduce yourself, reference previous conversations, reference analysis delivered, then continue at the current stage. Never return to Call #1.
+
+#8 DISCOVER BEFORE SOLVING — When a concern is raised: Concern → Understand concern → Determine owner → Determine importance → Determine impact → THEN discuss solutions. Never solve before understanding.
+
+#9 NO ASSUMPTIONS — Never state marketplace facts as certainty unless provided in the brief. Use hedged language: "It appears..." / "From what I could see..." / "I may be mistaken, but..."
+
+#10 STAKEHOLDER MAPPING HAS AN END — Once the stakeholder map is known, STOP asking "Who else? / Anyone else?" Transition to: approval criteria, evaluation requirements, decision process, timeline, conditions for moving forward.
+
+#11 CONCERN EXPLORATION HAS AN END — Once a concern is identified, do NOT rephrase the same concern repeatedly. Example: known concern is distributor conflict → do NOT ask about distributor conflict 5 different ways. Instead move to: how is it evaluated / who owns it / what evidence is required / what would resolve it.
+
+#12 DISCOVER BUYING PROCESS — Call #3+ should prioritize: approval path, decision hierarchy, internal process, evaluation criteria, timeline, success metrics. NOT Amazon education.
+
+#13 DISCOVER CRITERIA BEFORE PRESENTING CASE — Before discussing presentations, proposals, or executive briefings, first learn: "What would leadership need to see?" Never assume — discover first.
+
+#14 MOVE UP THE DECISION LADDER — Correct progression: Problem → Concern → Concern owner → Decision maker → Approval criteria → Evaluation process → Timeline → Next step. Do not loop backward.
+
+#15 LOOP DETECTION — Before asking ANY question: (a) has this already been answered? (b) am I asking the same thing differently? (c) will this create new intelligence? If no new intelligence likely, ask a different question.
+
+#16 CALL #3+ PRIORITY SHIFT — Call #1 = Awareness. Call #2 = Reaction & evaluation. Call #3+ = COMMERCIAL QUALIFICATION (decision process, stakeholders, evaluation criteria, approval requirements, timeline). Amazon becomes SECONDARY in Call #3+. Never reverse this order.
+
+═══════════════════════════════════════════════════════════════
+FINAL RULE
+═══════════════════════════════════════════════════════════════
+The objective is NOT to convince.
+The objective is to understand how the brand evaluates strategic partnerships and determine whether a fit exists.
+
+Discovery before persuasion.
+Qualification before proposals.
+Understanding before solutions.
+
+═══════════════════════════════════════════════════════════════
+HARD RULES
+═══════════════════════════════════════════════════════════════
+- Vortex Origin Brands — never any other spelling.
+- Never position Vortex as agency, consultant, marketing firm, or service provider.
+- Never pitch services in Awareness or Discovery.
+- Never pitch anything before a problem is acknowledged.
+- Never invent Amazon issues. Evidence-based only — Brief or supplier statement.
+- Never guarantee results or promise revenue increases.
+- Never use fear-based, pressure, or manipulative tactics.
+- Never re-ask questions already captured in the scorecard.
+- Never restart discovery if the relationship has progressed past Awareness.
+- Never make Brand Registry the headline. The headline is wholesale distribution partnership.
+- Never skip Stage 0. Decision-maker verification is mandatory FIRST.
+
+═══════════════════════════════════════════════════════════════
+COMMUNICATION STYLE
+═══════════════════════════════════════════════════════════════
+Sound like a real human on a real phone call. Short sentences. Natural language. One question at a time. Under 3 sentences whenever possible.
+
+GOOD openers: Understood / That makes sense / Got it / Helpful to know / That's interesting.
+NEVER: Perfect, Great, Awesome, Amazing.
+
+If a line sounds artificial or scripted when read aloud, it's wrong. Rewrite it.
+
+═══════════════════════════════════════════════════════════════
+OUTPUT FORMAT (strict JSON — no markdown fences, no prose outside JSON)
+═══════════════════════════════════════════════════════════════
+{
+  "suggestion": "Natural conversational response. Plain text, no quotation marks. 1-3 sentences typical.",
+  "scorecard_delta": {
+    "amazon_presence": { "aware_of_amazon_presence": true, "amazon_managed": true, "amazon_manager": "...", "seller_visibility": "...", "seller_count_known": true, "brand_registry_status": "...", "listing_control": "...", "map_policy_status": "..." },
+    "commercial_terms": { "moq": "...", "payment_terms": "...", "approval_timeline": "...", "freight_terms": "...", "reorder_minimum": "...", "net_terms": "..." },
+    "account_requirements": { "reseller_certificate_required": true, "ein_required": true, "credit_application_required": true, "wholesale_agreement_required": true, "references_required": true },
+    "product_information": { "product_categories": [], "key_brands": [], "fast_growing_categories": [], "focus_segments": [] },
+    "restrictions": { "marketplace_restrictions": [], "brand_restrictions": [], "geographic_restrictions": [], "dealer_requirements": [] },
+    "opportunities": { "categories_of_interest": [], "expansion_opportunities": [], "high_potential_brands": [] }
+  }
+}
+
+scorecard_delta rules:
+  • Only include fields the contact EXPLICITLY confirmed in their LATEST message
+  • Omit empty sections — invented field names will be dropped
+  • amazon_presence is PRIMARY — populate aggressively when Amazon-awareness info appears
+  • Do not echo facts from prior turns
+`;
+
+const QUICK_NOTE_SYSTEM = `
+═══════════════════════════════════════════════════════════════
+VORTEX ORIGIN BRANDS — QUICK NOTE WORKFLOW v2
+═══════════════════════════════════════════════════════════════
+
+CORE STRATEGY
+Quick Note is NOT Brand Registry. NOT an Amazon consulting workflow. NOT a PPC sales workflow.
+
+Quick Note is for brands that:
+  • Are already active on Amazon
+  • Typically have Brand Registry already
+  • Have listings, storefronts, and marketplace presence
+  • Show potential optimization opportunities or marketplace risks
+
+The Amazon observations (multiple sellers, weak listings, missing A+, pricing issues, PPC gaps, storefront underutilization) are CONVERSATION STARTERS only. They are NOT the primary objective.
+
+The PRIMARY OBJECTIVE is:
+  1. Build credibility
+  2. Validate the observation(s)
+  3. Understand Amazon ownership
+  4. Understand Amazon priorities
+  5. Introduce Vortex's direct purchasing model
+  6. Qualify a wholesale relationship
+  7. Learn the account-opening process
+  8. Build long-term trust
+
+═══════════════════════════════════════════════════════════════
+LONG-TERM PARTNERSHIP STRATEGY
+═══════════════════════════════════════════════════════════════
+SHORT-TERM OBJECTIVE (this call):
+  • Open wholesale account
+  • Establish direct purchasing relationship
+  • Become an authorized reseller
+  • Demonstrate reliability
+  • Build trust
+
+LONG-TERM OBJECTIVE (months ahead):
+  • Become the brand's preferred Amazon partner
+  • Earn increased responsibility over time
+  • Potentially become the primary or exclusive Amazon partner
+
+EXCLUSIVITY RULE:
+  • Exclusivity is NEVER the objective of the first call.
+  • Exclusivity is NEVER discussed during early qualification.
+  • Exclusivity is earned over months through consistent purchasing, strong communication, and trust.
+
+The AI must never assume which model the brand wants. Some brands prefer multiple authorized sellers, some prefer small networks, some eventually prefer one primary strategic partner.
+
+Good discovery questions:
+  • "How do you typically structure your Amazon partnerships today?"
+  • "Do you prefer working with a small group of approved sellers or a broader reseller network?"
+  • "How does your team think about managing Amazon representation long term?"
+
+Forbidden questions:
+  ✗ "Would you like us to become your exclusive seller?"
+  ✗ "Can we be your only Amazon partner?"
+  ✗ "Can we take over the Amazon channel?"
+
+═══════════════════════════════════════════════════════════════
+VORTEX POSITIONING
+═══════════════════════════════════════════════════════════════
+Position Vortex as:
+  • Direct purchasing partner
+  • Marketplace growth partner
+  • Long-term strategic partner
+  • Reliable, invested in the brand's success
+
+NEVER position Vortex as:
+  • PPC agency
+  • Amazon consultant
+  • Listing optimization agency
+  • Service provider seeking exclusivity
+  • Aggressive or controlling
+
+Services (PPC, A+ content, listing improvements, Brand Store, content) are SUPPORTING CAPABILITIES of the partnership — they are NOT the partnership.
+
+═══════════════════════════════════════════════════════════════
+4 STAGES — Follow in order, never skip
+═══════════════════════════════════════════════════════════════
+
+▸ STAGE 1 — DISCOVERY (SHORT)
+The first call gathers ONLY these 4 facts:
+  1. Who manages Amazon?
+  2. Are the observations from the brief accurate?
+  3. Are they satisfied with Amazon performance?
+  4. What is the biggest Amazon gap today?
+
+Once these 4 are answered: STOP discovery. Do NOT ask 15-20 more Amazon questions. Do NOT diagnose every possible Amazon problem. Goal = understand the PRIMARY concern, not every concern.
+
+▸ STAGE 2 — POSITIONING
+Once the primary concern is understood, transition naturally:
+  "The reason I ask is that we work directly with brands where we purchase inventory and represent those brands on Amazon. Sometimes we help improve channel execution along the way, but our primary model is a direct purchasing relationship."
+
+Channel-execution topics (PPC, A+, listings, Brand Store) may be mentioned ONLY as supporting capabilities. The headline is direct purchasing.
+
+▸ STAGE 3 — WHOLESALE QUALIFICATION (HIGHER PRIORITY than more Amazon discovery)
+After positioning, prioritize:
+  • "Do you work with authorized Amazon partners today?"
+  • "How do you evaluate new marketplace partners?"
+  • "Do you sell directly to approved resellers?"
+  • "What does your account-opening process look like?"
+  • "What documentation is required?"
+  • "Who reviews new wholesale accounts?"
+  • "What are your MOQ requirements?"
+  • "What are your wholesale requirements?"
+
+These questions are now HIGHER PRIORITY than additional Amazon discovery.
+
+▸ STAGE 4 — RELATIONSHIP BUILDING (if brand not ready)
+  • Build trust, maintain contact, share observations and marketplace insights
+  • Continue relationship development over weeks/months
+  • Do NOT force partnership discussions
+  • Many Quick Note relationships develop over 1-12 months
+
+The goal is becoming a trusted partner, not closing today.
+
+═══════════════════════════════════════════════════════════════
+OBSERVATION LANGUAGE — Use uncertainty
+═══════════════════════════════════════════════════════════════
+Always hedge observations: "I noticed…" / "It appears…" / "From what I could see…" / "I may be mistaken, but…"
+
+If the CALL BRIEF is empty of observations, do NOT invent any. Use open-ended discovery instead.
+
+═══════════════════════════════════════════════════════════════
+DISCIPLINE RULES (Quick Note specific)
+═══════════════════════════════════════════════════════════════
+
+QN-11 Never bundle unconfirmed observations into prospect priorities.
+  BAD:  "It sounds like listings, visibility, and sellers are your biggest concerns."
+  GOOD: "Of the observations I mentioned, which stand out most to your team?"
+
+QN-12 After correcting a misunderstanding, CONTINUE discovery. Do not restart the topic.
+
+QN-13 Never ask satisfaction questions after satisfaction has already been established.
+
+QN-14 Do not force prospects into diagnostic categories.
+  BAD:  "Is it conversion or tracking?"
+  GOOD: "What do you think was preventing the growth you expected?"
+
+QN-15 Do not leave the qualification path for unrelated channel discussions. Stay focused on Amazon → evaluation → purchasing relationship → account opening.
+
+QN-16 Do not re-ask Amazon importance once established.
+
+QN-17 Do not re-ask Amazon ownership once established.
+
+LOOP PREVENTION — Before every question ask:
+  1. Has this already been answered?
+  2. Does this create new intelligence?
+  3. Is this helping move toward wholesale qualification?
+  4. Is this helping move toward account opening?
+If any answer is NO → ask a different question.
+
+═══════════════════════════════════════════════════════════════
+DECISION MAKER MODE
+═══════════════════════════════════════════════════════════════
+If contact indicates they don't handle Amazon/marketplace/strategy decisions:
+STOP discovery. Gather only: name, title, email, direct phone, best time. End politely. Do not pitch.
+
+If the contact contradicts themselves, the MOST RECENT statement wins. Switch to Decision-Maker Mode immediately.
+
+═══════════════════════════════════════════════════════════════
+HARD RULES
+═══════════════════════════════════════════════════════════════
+- Vortex Origin Brands — never any other name.
+- Never invent observations not in the BRIEF.
+- Never state observations as facts — always hedge.
+- Never position Vortex as agency / consultant / service provider.
+- Never discuss exclusivity on the first call.
+- Never pitch before the brand confirms the observation matters.
+- Never pressure or use fear-based tactics.
+- Never re-ask questions already captured in the scorecard.
+- Never repeat any of the QN-11 through QN-17 violations.
+
+═══════════════════════════════════════════════════════════════
+SUCCESS CRITERIA
+═══════════════════════════════════════════════════════════════
+A successful Quick Note call eventually learns:
+  • Amazon owner
+  • Primary Amazon challenge
+  • Marketplace priorities
+  • Account-opening process
+  • Wholesale requirements
+  • MOQ requirements
+  • Approval process
+  • Decision maker
+  • Next step
+
+This workflow should progress FASTER than Brand Registry. Amazon observations start the conversation. Wholesale relationship qualification is the business objective.
+
+═══════════════════════════════════════════════════════════════
+COMMUNICATION STYLE
+═══════════════════════════════════════════════════════════════
+Sound like a real human on a phone call. Short sentences. ONE question at a time. Under 3 sentences whenever possible.
+Acceptable openers: Understood, That makes sense, Got it, Helpful to know, That's interesting.
+NEVER: Perfect, Great, Awesome, Amazing.
+
+═══════════════════════════════════════════════════════════════
+OUTPUT FORMAT (strict JSON — no fences, no prose outside JSON)
+═══════════════════════════════════════════════════════════════
+{
+  "suggestion": "Natural conversational response. Plain text, no quotation marks. 1-3 sentences typical.",
+  "scorecard_delta": {
+    "amazon_presence": { "aware_of_amazon_presence": true, "amazon_managed": true, "amazon_manager": "...", "seller_visibility": "...", "seller_count_known": true, "brand_registry_status": "...", "listing_control": "...", "map_policy_status": "..." },
+    "concerns": { "distributor_conflict": "...", "brand_representation": "...", "pricing_control": "...", "marketplace_visibility": "...", "internal_resource_concerns": "..." },
+    "stakeholders": { "marketing_contact": "...", "sales_contact": "...", "operations_contact": "...", "ownership_contact": "...", "primary_decision_maker": "..." },
+    "opportunities": { "categories_of_interest": [], "expansion_opportunities": [], "high_potential_brands": [] },
+    "commercial_terms": { "moq": "...", "payment_terms": "...", "approval_timeline": "...", "freight_terms": "...", "reorder_minimum": "...", "net_terms": "..." },
+    "account_requirements": { "reseller_certificate_required": true, "ein_required": true, "credit_application_required": true, "wholesale_agreement_required": true, "references_required": true }
+  }
+}
+
+scorecard_delta rules:
+  • Only include fields the contact EXPLICITLY confirmed in their LATEST message
+  • Omit empty sections — invented field names will be dropped
+  • Do not echo facts from prior turns
+`;
+
+const COACHING_SYSTEM_PROMPTS = {
+  distributor_inquiry: DISTRIBUTOR_INQUIRY_SYSTEM,
+  retail_inquiry: RETAIL_INQUIRY_SYSTEM,
+  brand_registry: BRAND_REGISTRY_SYSTEM,
+  quick_note: QUICK_NOTE_SYSTEM,
+  wholesale_inquiry: DISTRIBUTOR_INQUIRY_SYSTEM, // PLACEHOLDER — uses Distributor prompt until dedicated spec arrives
+};
+
+const formatMemoryForPrompt = (memory) => {
+  if (!memory) return "No supplier memory found.";
+  const objections = (memory.known_objections?.length)
+    ? memory.known_objections.map(o => `  ⚠ ${typeof o === 'string' ? o : JSON.stringify(o)}`).join('\n')
+    : '  (None)';
+  const restrictions = (memory.known_restrictions?.length)
+    ? memory.known_restrictions.map(r => `  ⚠ ${typeof r === 'string' ? r : JSON.stringify(r)}`).join('\n')
+    : '  (None)';
+  return `SUPPLIER CONTEXT:
+Company: ${memory.company_name || 'Unknown'}
+Website: ${memory.website || '(not provided)'}
+Category: ${memory.supplier_category || memory.category || 'Uncategorized'}
+Relationship Stage: ${memory.relationship_stage || 'Prospect'}
+Relationship Summary: ${memory.relationship_summary || '(no summary)'}
+Contact: ${memory.contact_name || '(unknown)'} ${memory.contact_email ? '<' + memory.contact_email + '>' : ''}
+Trust Score: ${memory.trust_score ?? 'N/A'}/10
+Past Calls: ${memory.total_calls_count || 0}
+
+KNOWN OBJECTIONS:
+${objections}
+
+KNOWN RESTRICTIONS:
+${restrictions}
+
+LAST CALL: ${memory.last_call_summary || '(No prior calls)'}`;
+};
+
+const generateCoachResponse = async ({ callType, memory, transcript, conversationHistory, layer1Context, brief }) => {
+  if (!CLAUDE_COACHING_ENABLED) return null;
+  const systemPromptForCall = COACHING_SYSTEM_PROMPTS[callType];
+  if (!systemPromptForCall) return null;
+  if (!process.env.CLAUDE_API_KEY || process.env.CLAUDE_API_KEY === 'sk-ant-placeholder') return null;
+
+  const memoryBlock = formatMemoryForPrompt(memory);
+  const layer1Summary = layer1Context ? `
+LAYER 1 INTELLIGENCE:
+- Missing info: ${(layer1Context.missingInfo || []).join(', ') || '(none)'}
+- Recommended question (if relevant): ${layer1Context.suggestedQuestion || '(none)'}
+- Confidence: ${layer1Context.confidence ?? 'N/A'}
+` : '';
+
+  const briefBlock = brief && brief.trim() ? `
+═══════════════════════════════════════════════════════════════
+CALL BRIEF — SANAULLAH'S PRE-CALL GUIDANCE (TREAT AS GUARDRAILS)
+═══════════════════════════════════════════════════════════════
+This is what Sanaullah wrote BEFORE starting the call. Use it as your single most important source of context. It tells you:
+  • What the call is about
+  • What is already known about the brand (do NOT re-ask these)
+  • What to focus the conversation on
+  • What to AVOID saying or asking
+  • Any observations from research (these are evidence you may reference)
+
+RULES:
+  1. If the brief states a fact ("brand has Brand Registry"), treat it as confirmed — never ask about it.
+  2. If the brief says "do not mention X" or "avoid X", do NOT bring up X under any circumstances.
+  3. If the brief lists observations (sellers found, listing issues, pricing data), you MAY reference them naturally. They are evidence-based.
+  4. If the brief is silent on something, fall back to discovery questions per the stage guidance.
+  5. The brief OVERRIDES generic discovery patterns when they conflict.
+
+BRIEF CONTENT:
+${brief.trim()}
+═══════════════════════════════════════════════════════════════
+` : '';
+  // ═══ Stage-aware coaching: inject current relationship stage + guidance ═══
+  const _stage = memory?.relationship_stage || "Awareness";
+  const _stageGuidance = getStageGuidance(_stage, callType);
+  const stageBlock = `\n═══ CURRENT RELATIONSHIP STAGE: ${_stage.toUpperCase()} ═══\nStage rules for this conversation:\n${_stageGuidance}\n\nIMPORTANT: Do NOT restart discovery if scorecard already contains information. Continue from where the relationship left off. Reference known facts naturally rather than re-asking.\n`;
+  const fullSystem = `${VORTEX_PROFILE}\n${TRUTH_RULE}\n${systemPromptForCall}\n${memoryBlock}\n${stageBlock}\n${briefBlock}\n${layer1Summary}`;
+  const recentHistory = (conversationHistory || []).slice(-6)
+    .map(m => `${m.role === 'user' ? 'Sanaullah' : 'Supplier'}: ${m.content}`)
+    .join('\n');
+
+  const userMessage = `Recent conversation:
+${recentHistory}
+
+Supplier just said: "${transcript}"
+
+Return ONLY a JSON object (no prose, no markdown fences) with this exact shape:
+{
+  "suggestion": "What Sanaullah should say next. Plain text, no quotation marks. 1-3 sentences.",
+  "scorecard_delta": {
+    "commercial_terms": { "moq": "...", "payment_terms": "...", "approval_timeline": "...", "freight_terms": "...", "reorder_minimum": "...", "net_terms": "..." },
+    "account_requirements": { "reseller_certificate_required": true, "ein_required": true, "credit_application_required": true, "wholesale_agreement_required": true, "references_required": true },
+    "product_information": { "product_categories": [], "key_brands": [], "fast_growing_categories": [], "focus_segments": [] },
+    "restrictions": { "marketplace_restrictions": [], "brand_restrictions": [], "geographic_restrictions": [], "dealer_requirements": [] },
+    "opportunities": { "categories_of_interest": [], "expansion_opportunities": [], "high_potential_brands": [] }
+  }
+}
+
+scorecard_delta rules:
+- ONLY include fields the supplier EXPLICITLY confirmed in their LATEST message above.
+- Omit sections and fields entirely if not mentioned. Empty {} is fine.
+- Use ONLY the field names shown — invented names will be dropped.
+- Store amounts as readable strings ("$5,000", "5000 units"). Booleans as true/false.
+- Do NOT echo facts from prior turns or memory — only what was JUST said.`;
+
+  const _t_layer2_start = Date.now();
+  try {
+    const resp = await Promise.race([
+      client.messages.create({
+        model: 'claude-haiku-4-5',
+        max_tokens: 600,
+        system: fullSystem,
+        messages: [{ role: 'user', content: userMessage }],
+      }),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('Claude timeout')), 8000)),
+    ]);
+    const raw = resp?.content?.[0]?.text?.trim();
+    if (!raw || raw.length < 3) return null;
+
+    // Try to parse as JSON; fall back to treating it as plain text if Claude ignored the format
+    let suggestion = null;
+    let scorecard_delta = {};
+    try {
+      const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+      const parsed = JSON.parse(cleaned);
+      suggestion = (parsed.suggestion || "").trim();
+      if (parsed.scorecard_delta && typeof parsed.scorecard_delta === "object") {
+        scorecard_delta = parsed.scorecard_delta;
+      }
+    } catch (e) {
+      console.warn("[Layer 2] JSON parse failed, falling back to plain text. Raw:", raw.slice(0, 200));
+      suggestion = raw;
+      scorecard_delta = {};
+    }
+
+    if (!suggestion || suggestion.length < 3) return null;
+    console.log(`[Layer 2] Haiku response: ${Date.now() - _t_layer2_start}ms, suggestion=${suggestion.length} chars, delta_sections=${Object.keys(scorecard_delta).length}`);
+    return { text: suggestion, scorecard_delta };
+  } catch (err) {
+    console.error(`[Layer 2] failed after ${Date.now() - _t_layer2_start}ms:`, err.message);
+    return null;
+  }
+};
+
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -39,7 +821,8 @@ const findSupplier = async (companyName) => {
     const { data } = await supabase
       .from("supplier_memory")
       .select("*")
-      .eq("name", normalizedName)
+      .eq("normalized_name", normalizedName)
+      .is("archived_at", null)
       .single();
 
     return data || null;
@@ -77,19 +860,320 @@ const extractCollectedInfo = (memory) => {
   ].filter(Boolean);
 };
 
-const extractMissingInfo = (memory, transcript) => {
-  const missing = [];
-  const lowerTranscript = transcript.toLowerCase();
-
-  const fields = [
-    { name: "Pricing details", keywords: ["price", "cost", "rate", "$", "¥", "€"] },
+const WORKFLOW_FIELDS = {
+  distributor_inquiry: [
+    { name: "Documents required", keywords: ["document", "resale", "ein", "license", "tax id", "certificate"] },
+    { name: "Minimum order quantities", keywords: ["minimum", "moq", "mov", "min order"] },
+    { name: "Approval timeline", keywords: ["approval", "timeline", "how long", "days", "weeks"] },
+    { name: "Payment terms", keywords: ["payment", "terms", "net 30", "net 60", "deposit", "prepay", "cod"] },
+    { name: "Product categories", keywords: ["category", "categories", "brands", "lines", "products carried"] },
+    { name: "Ordering process", keywords: ["portal", "edi", "ordering", "place order", "rep"] },
+    { name: "Freight terms", keywords: ["freight", "shipping", "fob", "delivered", "who pays"] },
+    { name: "Volume discounts", keywords: ["volume", "discount", "tier", "bulk pricing"] },
+    { name: "Compliance requirements", keywords: ["map", "exclusivity", "territory", "compliance"] },
+    { name: "Next step", keywords: ["next step", "follow up", "send", "schedule", "call back"] },
+  ],
+  wholesale_inquiry: [
+    { name: "Accepting new resellers", keywords: ["accepting", "open to", "new accounts", "authorized resellers"] },
+    { name: "Authorized reseller criteria", keywords: ["criteria", "requirements", "look for", "qualify"] },
+    { name: "Application process", keywords: ["application", "apply", "process", "form", "submit"] },
+    { name: "MAP policy", keywords: ["map", "minimum advertised", "pricing policy"] },
     { name: "Minimum order quantities", keywords: ["minimum", "moq", "min order"] },
-    { name: "Lead times", keywords: ["delivery", "lead", "ship", "timeline"] },
-    { name: "Quality certifications", keywords: ["iso", "cert", "quality", "standard"] },
+    { name: "Existing seller landscape", keywords: ["existing sellers", "current resellers", "exclusive", "how many"] },
+    { name: "Documents required", keywords: ["document", "resale", "ein", "license"] },
     { name: "Payment terms", keywords: ["payment", "terms", "net 30", "deposit"] },
-    { name: "Shipping options", keywords: ["ship", "freight", "logistics", "fob"] },
-    { name: "Return policy", keywords: ["return", "refund", "warranty"] },
-  ];
+    { name: "Next step", keywords: ["next step", "follow up", "send", "schedule"] },
+  ],
+  brand_registry: [
+    { name: "Brand Registry status", keywords: ["brand registry", "registered", "protected", "trademark"] },
+    { name: "Current Amazon seller landscape", keywords: ["amazon sellers", "third party", "unauthorized", "gray market", "current sellers"] },
+    { name: "Channel management openness", keywords: ["manage", "control", "channel", "partnership", "exclusive partner"] },
+    { name: "Authorized seller status", keywords: ["authorize", "approval", "authorized", "letter"] },
+    { name: "MAP policy", keywords: ["map", "minimum advertised", "pricing policy"] },
+    { name: "Decision maker", keywords: ["who handles", "decision maker", "who decides", "contact", "talk to"] },
+    { name: "Minimum order quantities", keywords: ["minimum", "moq", "min order"] },
+    { name: "Next step", keywords: ["next step", "follow up", "send", "schedule"] },
+  ],
+  quick_note: [
+    { name: "Account opening process", keywords: ["open account", "account opening", "process", "how do i", "how to start"] },
+    { name: "Minimum order quantities", keywords: ["minimum", "moq", "min order"] },
+    { name: "Decision maker", keywords: ["who handles", "decision maker", "contact", "talk to"] },
+    { name: "Next step", keywords: ["next step", "follow up", "send", "schedule"] },
+  ],
+  retail_inquiry: [
+    { name: "Open to wholesale accounts", keywords: ["wholesale", "open to wholesale", "accept wholesale"] },
+    { name: "Account opening process", keywords: ["open account", "process", "how do i", "application"] },
+    { name: "Minimum order quantities", keywords: ["minimum", "moq", "min order"] },
+    { name: "MAP policy", keywords: ["map", "minimum advertised", "pricing policy"] },
+    { name: "Distribution restrictions", keywords: ["restriction", "exclusive", "territory", "limit"] },
+    { name: "Decision maker", keywords: ["who handles", "decision maker", "contact", "talk to"] },
+    { name: "Next step", keywords: ["next step", "follow up", "send", "schedule"] },
+  ],
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Canonical map: each open question maps to scorecard field paths that "answer" it.
+// A question is answered when ANY of its mapped fields has a non-null value.
+// This is the single source of truth for completion tracking.
+// ═══════════════════════════════════════════════════════════════════════════════
+const QUESTION_TO_SCORECARD_FIELD = {
+  "Documents required": [
+    "account_requirements.reseller_certificate_required",
+    "account_requirements.ein_required",
+    "account_requirements.credit_application_required",
+    "account_requirements.wholesale_agreement_required",
+  ],
+  "Minimum order quantities": ["commercial_terms.moq"],
+  "Approval timeline": ["commercial_terms.approval_timeline"],
+  "Payment terms": ["commercial_terms.payment_terms", "commercial_terms.net_terms"],
+  "Freight terms": ["commercial_terms.freight_terms"],
+  "Product categories": ["product_information.product_categories"],
+  "Volume discounts": ["commercial_terms.reorder_minimum"],
+  "Compliance / MAP": ["restrictions.marketplace_restrictions", "restrictions.dealer_requirements"],
+};
+
+function _scoreHasValue(v) {
+  // Unwraps {value, confidence} shape; treats null/empty as "not answered"
+  let raw = v;
+  while (raw && typeof raw === "object" && !Array.isArray(raw) && "value" in raw) {
+    raw = raw.value;
+  }
+  if (raw === null || raw === undefined || raw === "") return false;
+  if (Array.isArray(raw) && raw.length === 0) return false;
+  return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BRAND REGISTRY SPECIALIZED INTELLIGENCE LADDER
+// 5-stage progression: each stage's questions only surface when all prior stages
+// have been resolved in the scorecard. Used INSTEAD of generic computeOpenQuestions
+// when callType === 'brand_registry'.
+// ═══════════════════════════════════════════════════════════════════════════════
+function brandRegistryOpenQuestions(scorecard) {
+  const sc = scorecard || {};
+  const has = (path) => {
+    const [section, key] = path.split(".");
+    return _scoreHasValue(sc?.[section]?.[key]);
+  };
+  const stage1 = has("amazon_presence.aware_of_amazon_presence")
+              && has("amazon_presence.amazon_manager")
+              && has("stakeholders.primary_decision_maker");
+  const stage2 = stage1
+              && (_hasAnyField(sc?.concerns) || _hasAnyField(sc?.stakeholders));
+  const stage3 = stage2
+              && (has("evaluation_process.approval_path") || has("evaluation_process.decision_process"));
+  const stage4 = stage3
+              && has("evaluation_process.evaluation_timeline");
+  const stage5 = stage4
+              && has("commercial_terms.moq");
+
+  const open = [];
+  if (!stage1) {
+    if (!has("amazon_presence.aware_of_amazon_presence")) open.push({ question: "Aware of Amazon activity", priority: "high", stage: 1 });
+    if (!has("amazon_presence.amazon_manager"))           open.push({ question: "Who manages Amazon today", priority: "high", stage: 1 });
+    if (!has("stakeholders.primary_decision_maker"))      open.push({ question: "Primary decision maker for Amazon", priority: "high", stage: 1 });
+    return open;
+  }
+  if (!stage2) {
+    if (!_hasAnyField(sc?.concerns))     open.push({ question: "Primary concerns (distributor conflict, pricing, listings, visibility)", priority: "high", stage: 2 });
+    if (!_hasAnyField(sc?.stakeholders)) open.push({ question: "Stakeholder map (marketing/sales/ops/ownership)", priority: "high", stage: 2 });
+    return open;
+  }
+  if (!stage3) {
+    if (!has("evaluation_process.approval_path"))    open.push({ question: "Approval path", priority: "high", stage: 3 });
+    if (!has("evaluation_process.decision_process")) open.push({ question: "Decision process", priority: "high", stage: 3 });
+    if (!has("evaluation_process.leadership_criteria")) open.push({ question: "Leadership evaluation criteria", priority: "medium", stage: 3 });
+    return open;
+  }
+  if (!stage4) {
+    if (!has("evaluation_process.evaluation_timeline")) open.push({ question: "Decision timeline", priority: "high", stage: 4 });
+    open.push({ question: "Leadership feedback so far", priority: "medium", stage: 4 });
+    open.push({ question: "Remaining objections", priority: "medium", stage: 4 });
+    return open;
+  }
+  if (!stage5) {
+    if (!has("commercial_terms.moq"))              open.push({ question: "Minimum order quantities", priority: "high", stage: 5 });
+    if (!has("commercial_terms.payment_terms"))    open.push({ question: "Payment terms", priority: "high", stage: 5 });
+    if (!has("commercial_terms.freight_terms"))    open.push({ question: "Freight terms", priority: "medium", stage: 5 });
+    if (!has("commercial_terms.approval_timeline")) open.push({ question: "Approval timeline", priority: "medium", stage: 5 });
+    return open;
+  }
+  return []; // all stages resolved
+}
+
+function computeOpenQuestions(scorecard) {
+  const open = [];
+  const sc = scorecard || {};
+  for (const [question, fieldPaths] of Object.entries(QUESTION_TO_SCORECARD_FIELD)) {
+    const answered = fieldPaths.some((path) => {
+      const [section, key] = path.split(".");
+      return _scoreHasValue(sc?.[section]?.[key]);
+    });
+    if (!answered) open.push({ question, priority: "high" });
+  }
+  return open;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// RELATIONSHIP STAGE ENGINE — Intelligence-driven stage detection.
+// Stage transitions are anchored to scorecard content and call outcomes,
+// never to call count. The reason trace helps verify behavior during testing.
+// ═══════════════════════════════════════════════════════════════════════════════
+const RELATIONSHIP_STAGES = [
+  "Awareness", "Discovery", "Evaluation",
+  "Proposal Sent", "Negotiation", "Active Partner", "Closed Lost"
+];
+
+function _hasAnyField(section) {
+  if (!section || typeof section !== "object") return false;
+  for (const v of Object.values(section)) {
+    if (_scoreHasValue(v)) return true;
+  }
+  return false;
+}
+
+function determineStage(supplier, scorecard, latestOutcome) {
+  const sc = scorecard || {};
+  const outcome = (latestOutcome || supplier?.last_call_outcome || "").toLowerCase();
+
+  const hasMoq = _scoreHasValue(sc?.commercial_terms?.moq);
+  const hasAcctReq = _hasAnyField(sc?.account_requirements);
+  const hasCommercial = _hasAnyField(sc?.commercial_terms);
+  const hasRestrictions = _hasAnyField(sc?.restrictions);
+  const hasOpportunities = _hasAnyField(sc?.opportunities);
+
+  // CLOSED LOST
+  if (outcome === "rejected") {
+    return { stage: "Closed Lost", reason: "Last call outcome = Rejected" };
+  }
+
+  // ACTIVE PARTNER
+  if (outcome === "approved" && hasMoq && hasAcctReq) {
+    return { stage: "Active Partner", reason: "Outcome=Approved with MOQ + account requirements captured" };
+  }
+
+  // NEGOTIATION
+  if ((outcome === "application under review" || outcome === "documents requested") && hasMoq) {
+    return { stage: "Negotiation", reason: `Outcome=${outcome} with MOQ captured` };
+  }
+
+  // PROPOSAL SENT
+  if (outcome === "awaiting response" && hasMoq) {
+    return { stage: "Proposal Sent", reason: "Outcome=Awaiting Response with MOQ captured" };
+  }
+
+  // EVALUATION (brand protection or growth conversation happened)
+  if (hasRestrictions || hasOpportunities) {
+    const which = hasRestrictions ? "restrictions" : "opportunities";
+    return { stage: "Evaluation", reason: `Scorecard has ${which} populated (brand-protection or growth discussion)` };
+  }
+
+  // DISCOVERY (some qualification info shared)
+  if (hasCommercial || hasAcctReq) {
+    return { stage: "Discovery", reason: "Scorecard has commercial_terms or account_requirements populated" };
+  }
+
+  // AWARENESS (default)
+  return { stage: "Awareness", reason: "No qualification data captured yet" };
+}
+
+function getStageGuidance(stage, callType) {
+  // Stage-specific behavior rules injected into Layer 2 system prompt
+  const base = {
+    "Awareness": `Focus ONLY on understanding their current Amazon presence and awareness. Do NOT mention Brand Registry, solutions, MOQ, payment terms, or wholesale onboarding. Ask: are you managing Amazon today? Is it on your radar? Who handles it internally?`,
+    "Discovery": `Focus on uncovering the situation: seller landscape, pricing consistency, listing control, brand monitoring. Do NOT pitch solutions. Surface problems before solutions. Brand Registry may be MENTIONED if directly asked but do not lead with it.`,
+    "Evaluation": `The brand understands the problem. Now educate on opportunities. Brand Registry, MAP enforcement, channel control, growth strategy are all appropriate topics. Help them see what an ideal Amazon presence looks like.`,
+    "Proposal Sent": `Discovery is COMPLETE. Do NOT restart qualification. Do NOT re-ask captured questions. Focus only on clarifying questions about the proposal, handling concerns, and moving toward a decision.`,
+    "Negotiation": `Focus on resolving final concerns: implementation, risk reduction, partnership structure. No new discovery. Handle objections calmly. Confirm details, do not re-qualify.`,
+    "Active Partner": `Relationship is established. Behave as an account manager, not a sales rep. Focus on growth, expansion, optimization, mutual success. Do NOT ask qualification questions.`,
+    "Closed Lost": `Conversation should end gracefully. Acknowledge their position, leave the door open for the future. Do not push.`,
+  };
+  return base[stage] || base["Awareness"];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LIVE SESSION STATE — Architecture C
+// In-memory scratchpad keyed by session_id. Holds scorecard deltas extracted
+// mid-call from Layer 2 Claude responses. Merged with persisted scorecard for
+// live open-question recomputation. Cleared on call-end. 30-min TTL sweep.
+// ═══════════════════════════════════════════════════════════════════════════════
+const liveSessions = new Map();
+const SESSION_TTL_MS = 30 * 60 * 1000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [sid, session] of liveSessions.entries()) {
+    if (now - session.last_touched_at > SESSION_TTL_MS) {
+      liveSessions.delete(sid);
+      console.log(`[liveSessions] TTL evicted session ${sid}`);
+    }
+  }
+}, 5 * 60 * 1000);
+
+function getOrCreateLiveSession(sessionId, supplierId) {
+  if (!sessionId) return null;
+  let s = liveSessions.get(sessionId);
+  if (!s) {
+    s = {
+      supplier_id: supplierId,
+      session_scorecard: {},
+      started_at: Date.now(),
+      last_touched_at: Date.now(),
+    };
+    liveSessions.set(sessionId, s);
+  } else {
+    s.last_touched_at = Date.now();
+  }
+  return s;
+}
+
+function mergeDeltaIntoSession(session, delta) {
+  if (!session || !delta || typeof delta !== "object") return;
+  for (const [section, fields] of Object.entries(delta)) {
+    if (!ALLOWED_FIELDS[section]) continue; // closed-schema gate
+    if (!fields || typeof fields !== "object") continue;
+    if (!session.session_scorecard[section]) session.session_scorecard[section] = {};
+    for (const [k, v] of Object.entries(fields)) {
+      if (!ALLOWED_FIELDS[section].includes(k)) continue;
+      if (v === null || v === undefined || v === "") continue;
+      session.session_scorecard[section][k] = v;
+    }
+  }
+}
+
+function mergeScorecardForLive(persistedScorecard, sessionScorecard) {
+  const merged = JSON.parse(JSON.stringify(persistedScorecard || {}));
+  for (const [section, fields] of Object.entries(sessionScorecard || {})) {
+    if (!merged[section]) merged[section] = {};
+    for (const [k, v] of Object.entries(fields || {})) {
+      if (v !== null && v !== undefined && v !== "") {
+        merged[section][k] = v;
+      }
+    }
+  }
+  return merged;
+}
+
+// Shared closed-schema field map (used by validator + live merge)
+const ALLOWED_FIELDS = {
+  account_requirements: ["reseller_certificate_required", "ein_required", "credit_application_required", "wholesale_agreement_required", "references_required"],
+  commercial_terms: ["moq", "reorder_minimum", "payment_terms", "net_terms", "freight_terms", "approval_timeline"],
+  product_information: ["product_categories", "key_brands", "fast_growing_categories", "focus_segments"],
+  restrictions: ["marketplace_restrictions", "brand_restrictions", "geographic_restrictions", "dealer_requirements"],
+  opportunities: ["categories_of_interest", "expansion_opportunities", "high_potential_brands"],
+  // Amazon presence (used heavily by Brand Registry workflow)
+  amazon_presence: ["aware_of_amazon_presence", "amazon_managed", "amazon_manager", "seller_visibility", "seller_count_known", "brand_registry_status", "listing_control", "map_policy_status"],
+  // Brand Registry specialized intelligence categories
+  stakeholders: ["marketing_contact", "sales_contact", "operations_contact", "ownership_contact", "primary_decision_maker"],
+  concerns: ["distributor_conflict", "brand_representation", "pricing_control", "marketplace_visibility", "internal_resource_concerns"],
+  evaluation_process: ["approval_path", "decision_process", "leadership_criteria", "evaluation_timeline", "success_metrics"],
+};
+
+const extractMissingInfo = (memory, transcript, callType) => {
+  const missing = [];
+  const lowerTranscript = (transcript || "").toLowerCase();
+
+  const fields = WORKFLOW_FIELDS[callType] || WORKFLOW_FIELDS.distributor_inquiry;
 
   fields.forEach(({ name, keywords }) => {
     const hasKeywords = keywords.some((kw) => lowerTranscript.includes(kw));
@@ -201,17 +1285,79 @@ const generateNextObjective = (memory, missingInfo, currentStage, signalAnalysis
   return "Move toward partnership agreement";
 };
 
-const generateSuggestedQuestion = (missingInfo, nextObjective, signalAnalysis, memory) => {
-  if (missingInfo.includes("Pricing details")) {
-    return "Can you provide your pricing structure and any volume discounts?";
+const WORKFLOW_QUESTIONS = {
+  distributor_inquiry: {
+    "Documents required": "What documents do you need from us to open a wholesale account \u2014 resale certificate, EIN, anything else?",
+    "Minimum order quantities": "What's your minimum order value or MOQ for a new account opening order?",
+    "Approval timeline": "How long does account approval typically take once documents are submitted?",
+    "Payment terms": "What payment terms do new accounts typically start with \u2014 prepay, Net 30, credit application?",
+    "Product categories": "Which brands and product lines do you currently carry that are open to new resellers?",
+    "Ordering process": "How do new accounts place orders \u2014 online portal, EDI, or through a rep?",
+    "Freight terms": "What are your freight terms \u2014 FOB origin, delivered, or freight-paid?",
+    "Volume discounts": "Do you offer volume discounts or tiered pricing for higher order quantities?",
+    "Compliance requirements": "Are there any compliance requirements I should know about \u2014 MAP, territory restrictions, channel limitations?",
+    "Next step": "What's the best next step \u2014 submit documents, schedule a follow-up, anything else?",
+  },
+  wholesale_inquiry: {
+    "Accepting new resellers": "Are you currently accepting applications from new authorized resellers?",
+    "Authorized reseller criteria": "What do you look for when approving a new authorized reseller?",
+    "Application process": "What's the application process \u2014 do you have a form, or is it handled directly?",
+    "MAP policy": "What's the MAP policy and how is it enforced?",
+    "Minimum order quantities": "What's your standard MOQ for authorized resellers?",
+    "Existing seller landscape": "How many authorized sellers do you currently work with, and is it an open or selective program?",
+    "Documents required": "What paperwork do you need on your authorized reseller application?",
+    "Payment terms": "What are your standard payment terms for new authorized resellers?",
+    "Next step": "What's the next step from here?",
+  },
+  brand_registry: {
+    "Brand Registry status": "Is the brand currently registered with Amazon Brand Registry?",
+    "Current Amazon seller landscape": "Who's currently selling the brand on Amazon \u2014 authorized resellers, third parties, or unknown?",
+    "Channel management openness": "Are you open to a partner who manages your Amazon channel \u2014 listings, ads, brand protection \u2014 as part of the wholesale relationship?",
+    "Authorized seller status": "Would you authorize us as an approved seller, and what documentation would that involve?",
+    "MAP policy": "What's the brand's MAP policy and current enforcement approach?",
+    "Decision maker": "Who's the right person on your team for wholesale and Amazon channel conversations?",
+    "Minimum order quantities": "What's the MOQ commitment expected from authorized sellers?",
+    "Next step": "What's a good next step \u2014 send our proposal, schedule a follow-up call?",
+  },
+  quick_note: {
+    "Account opening process": "What's the best way to start the process of opening an account?",
+    "Minimum order quantities": "What's the MOQ to get started?",
+    "Decision maker": "Who's the right person to talk to about opening an account?",
+    "Next step": "What's the easiest way to move this forward?",
+  },
+  retail_inquiry: {
+    "Open to wholesale accounts": "Are you currently working with wholesale partners or evaluating new ones?",
+    "Account opening process": "What's the process to open a wholesale account?",
+    "Minimum order quantities": "What's the typical minimum opening order?",
+    "MAP policy": "Do you have a MAP policy we'd need to follow?",
+    "Distribution restrictions": "Are there any distribution restrictions we should know about \u2014 exclusive partners, territories, or channels?",
+    "Decision maker": "Who handles wholesale partnerships on your side?",
+    "Next step": "What would be the next step?",
+  },
+};
+
+const WORKFLOW_FALLBACK_QUESTIONS = {
+  distributor_inquiry: "Could you walk me through what's needed to open a wholesale account?",
+  wholesale_inquiry: "Could you tell me how your authorized reseller program works?",
+  brand_registry: "Could you share how you currently manage the brand on Amazon?",
+  quick_note: "What's the best way to move forward from here?",
+  retail_inquiry: "Could you tell me how you typically work with wholesale partners?",
+};
+
+const generateSuggestedQuestion = (missingInfo, nextObjective, signalAnalysis, memory, callType) => {
+  const workflow = callType || "distributor_inquiry";
+  const questions = WORKFLOW_QUESTIONS[workflow] || WORKFLOW_QUESTIONS.distributor_inquiry;
+  const fallback = WORKFLOW_FALLBACK_QUESTIONS[workflow] || WORKFLOW_FALLBACK_QUESTIONS.distributor_inquiry;
+
+  if (Array.isArray(missingInfo)) {
+    for (const field of missingInfo) {
+      if (questions[field]) {
+        return questions[field];
+      }
+    }
   }
-  if (missingInfo.includes("Minimum order quantities")) {
-    return "What is your minimum order quantity?";
-  }
-  if (missingInfo.includes("Lead times")) {
-    return "What are your typical lead times for delivery?";
-  }
-  return "Could you provide more details about your standard terms and conditions?";
+
+  return fallback;
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -536,7 +1682,7 @@ const selectBestQuestion = (openQuestions, behaviorProfile, questionEffectivenes
   };
 };
 
-const combineInsights = (memory, signalAnalysis, flowAnalysis, currentStage, historicalTrustLevel, missingInfo, intelligence) => {
+const combineInsights = (memory, signalAnalysis, flowAnalysis, currentStage, historicalTrustLevel, missingInfo, intelligence, callType) => {
   let trustAssessment = calculateSessionTrust(
     historicalTrustLevel,
     signalAnalysis,
@@ -546,7 +1692,7 @@ const combineInsights = (memory, signalAnalysis, flowAnalysis, currentStage, his
   
   let stageAssessment = determineConversationStage(memory, signalAnalysis, flowAnalysis);
   let nextObjective = generateNextObjective(memory, missingInfo, stageAssessment.current_stage, signalAnalysis);
-  let suggestedQuestion = generateSuggestedQuestion(missingInfo, nextObjective, signalAnalysis, memory);
+  let suggestedQuestion = generateSuggestedQuestion(missingInfo, nextObjective, signalAnalysis, memory, callType);
   
   if (intelligence) {
     if (intelligence.openQuestions && intelligence.openQuestions.budget_status === "ACTIVE") {
@@ -1004,6 +2150,7 @@ app.post("/api/analyze-live", async (req, res) => {
 
     // Phase 1: Find supplier
     let supplier = await findSupplier(companyName);
+    console.log("[SUPPLIER_RESULT]", {companyName, found: !!supplier, id: supplier?.id});
     const supplierFound = !!supplier;
 
     // Phase 1: Load memory if found
@@ -1089,7 +2236,18 @@ app.post("/api/analyze-live", async (req, res) => {
     const signalAnalysis = extractTranscriptSignals(transcript);
     const flowAnalysis = analyzeConversationFlow(conversationHistory);
     const collectedInfo = extractCollectedInfo(memory);
-    const missingInfo = extractMissingInfo(memory, transcript);
+    // ═══ Architecture C: merge persisted + live session scorecard for live tracking ═══
+    const sessionId = req.body.session_id;
+    const liveSession = (sessionId && supplier?.id) ? getOrCreateLiveSession(sessionId, supplier.id) : null;
+    const effectiveScorecard = mergeScorecardForLive(
+      memory?.intelligence_scorecard || {},
+      liveSession?.session_scorecard
+    );
+    const liveOpenList = (callType === 'brand_registry')
+      ? brandRegistryOpenQuestions(effectiveScorecard)
+      : computeOpenQuestions(effectiveScorecard);
+    const missingInfo = liveOpenList.map(q => q.question);
+    console.log(`[analyze-live] session=${sessionId || "none"}, persisted_fields=${Object.keys(memory.intelligence_scorecard || {}).length}, session_fields=${Object.keys(liveSession?.session_scorecard || {}).length}, open=${missingInfo.length}`);
     const riskFlags = extractRiskFlags(memory);
 
     // Phase 1 & 2: Combine insights
@@ -1100,7 +2258,8 @@ app.post("/api/analyze-live", async (req, res) => {
       signalAnalysis.conversation_flow_stage,
       memory?.trust_score || 5,
       missingInfo,
-      budgetedIntelligence?.intelligence_map
+      budgetedIntelligence?.intelligence_map,
+      callType
     );
 
     // Build intelligence sources attribution
@@ -1198,6 +2357,46 @@ app.post("/api/analyze-live", async (req, res) => {
       response.intelligence_conflicts = conflictReport;
     }
 
+    // === LAYER 2: Response Coaching ===
+    try {
+      const layer1Context = {
+        missingInfo: response?.combined_recommendation?.missing_info || [],
+        suggestedQuestion: response?.combined_recommendation?.suggested_discovery_question || null,
+        confidence: response?.combined_recommendation?.confidence || null,
+      };
+      // ═══ Workflow routing: if supplier has a tagged primary_workflow, it overrides the call-type dropdown ═══
+      const effectiveCallType = (supplier && supplier.primary_workflow) ? supplier.primary_workflow : callType;
+      if (effectiveCallType !== callType) {
+        console.log(`[analyze-live] workflow routing: callType=${callType} overridden by supplier.primary_workflow=${effectiveCallType}`);
+      }
+      const coachResponse = await generateCoachResponse({
+        callType: effectiveCallType,
+        memory,
+        transcript,
+        conversationHistory,
+        layer1Context,
+        brief: req.body.brief,
+      });
+        // ═══ Architecture C: extract suggestion text + merge scorecard delta into live session ═══
+        let coachResponseText = null;
+        if (coachResponse && typeof coachResponse === "object" && "text" in coachResponse) {
+          coachResponseText = coachResponse.text;
+          if (coachResponse.scorecard_delta && liveSession) {
+            mergeDeltaIntoSession(liveSession, coachResponse.scorecard_delta);
+            console.log(`[analyze-live] merged delta into session ${sessionId}, session_fields now:`, Object.keys(liveSession.session_scorecard).map(s => `${s}(${Object.keys(liveSession.session_scorecard[s]).length})`).join(", "));
+          }
+        } else if (typeof coachResponse === "string") {
+          coachResponseText = coachResponse;
+        }
+      if (coachResponse) {
+        response.suggested_response = coachResponse;
+        response.response_source = 'claude_layer2';
+      } else {
+        response.response_source = 'layer1_fallback';
+      }
+    } catch (e) {
+      console.error('[Layer 2] wrapper error:', e.message);
+    }
     res.json(response);
 
   } catch (error) {
@@ -1226,7 +2425,7 @@ app.post("/api/analyze-supplier-message", async (req, res) => {
     }
 
     const signalAnalysis = extractTranscriptSignals(supplierMessage);
-    const missingInfo = extractMissingInfo(memory, supplierMessage);
+    const missingInfo = extractMissingInfo(memory, supplierMessage, callType);
 
     res.json({
       supplierUuid: supplierUuid,
@@ -1287,6 +2486,1263 @@ app.get("/api/learning/questions", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 5678;
+// ═══════════════════════════════════════════════════════════════════════════════
+// PHASE 2 INTELLIGENCE EXTRACTION
+// Extracts structured intelligence from call transcript, returns merged updates.
+// ═══════════════════════════════════════════════════════════════════════════════
+async function extractIntelligence({ supplier, fullTranscript, callType, callTypeLabel, recentTimeline = [] }) {
+  const existingScorecard = supplier.intelligence_scorecard || {};
+
+  const SCORECARD_SCHEMA = {
+    account_requirements: {
+      reseller_certificate_required: "boolean | null",
+      ein_required: "boolean | null",
+      credit_application_required: "boolean | null",
+      wholesale_agreement_required: "boolean | null",
+      references_required: "boolean | null"
+    },
+    commercial_terms: {
+      moq: "string | null",
+      reorder_minimum: "string | null",
+      payment_terms: "string | null",
+      net_terms: "string | null",
+      freight_terms: "string | null",
+      approval_timeline: "string | null"
+    },
+    product_information: {
+      product_categories: "string[]",
+      key_brands: "string[]",
+      fast_growing_categories: "string[]",
+      focus_segments: "string[]"
+    },
+    restrictions: {
+      marketplace_restrictions: "string[]",
+      brand_restrictions: "string[]",
+      geographic_restrictions: "string[]",
+      dealer_requirements: "string[]"
+    },
+    opportunities: {
+      categories_of_interest: "string[]",
+      expansion_opportunities: "string[]",
+      high_potential_brands: "string[]"
+    }
+  };
+
+  // ═══ Brand Registry: recent timeline for stale-action protection ═══
+  const _timelineLines = (Array.isArray(recentTimeline) && recentTimeline.length > 0)
+    ? recentTimeline.slice(0, 5).map(c => `- ${(c.call_date || '').slice(0,10)} | ${c.outcome || '—'} | ${(c.call_summary || '').slice(0, 140)}`).join("\n")
+    : "(no prior calls)";
+  // ═══ Brand Registry: additional intelligence categories appended to prompt ═══
+  const brExtension = (callType === 'brand_registry') ? `
+
+═══════════════════════════════════════════════════════════════
+BRAND REGISTRY SPECIALIZED INTELLIGENCE (EXTRACT ALSO)
+═══════════════════════════════════════════════════════════════
+This is a Brand Registry call. In addition to the base schema above, you MUST also extract these specialized categories when the transcript provides them. They are first-class intelligence for this workflow.
+
+amazon_presence:
+  - aware_of_amazon_presence (boolean — does the brand know products are on Amazon)
+  - amazon_managed (boolean — is anyone managing it)
+  - amazon_manager (string — name/role/agency managing Amazon)
+  - seller_visibility (string — what they see about sellers)
+  - seller_count_known (boolean — do they know how many sellers exist)
+  - brand_registry_status (string — "enrolled" | "not_enrolled" | "in_progress" | "unknown")
+  - listing_control (string — who controls listing content)
+  - map_policy_status (string — MAP policy in place or not)
+
+stakeholders:
+  - marketing_contact (string — name/role)
+  - sales_contact (string — name/role)
+  - operations_contact (string — name/role)
+  - ownership_contact (string — owner/founder name)
+  - primary_decision_maker (string — who has final say on Amazon strategy)
+
+concerns:
+  - distributor_conflict (string — distributor channel concerns)
+  - brand_representation (string — listing/content/A+/imagery concerns)
+  - pricing_control (string — pricing consistency, MAP concerns)
+  - marketplace_visibility (string — visibility issues)
+  - internal_resource_concerns (string — bandwidth, expertise, cost concerns)
+
+evaluation_process:
+  - approval_path (string — how decisions get approved)
+  - decision_process (string — who decides, how)
+  - leadership_criteria (string — what leadership needs to see)
+  - evaluation_timeline (string — when decision expected)
+  - success_metrics (string — what success looks like to them)
+
+These categories are AS IMPORTANT as commercial_terms for Brand Registry calls. Extract them aggressively when relevant info appears in the transcript. Empty objects are fine if nothing was said about that category.
+
+═══════════════════════════════════════════════════════════════
+RECENT TIMELINE (for stale-action protection in next_best_action)
+═══════════════════════════════════════════════════════════════
+${_timelineLines}
+
+STALE-ACTION RULE for next_best_action:
+DO NOT recommend an action that the timeline above shows has already been completed.
+Examples of stale recommendations to AVOID:
+  ✗ "Deliver Amazon analysis" if a prior outcome mentions analysis delivered/sent/presented
+  ✗ "Send introductory email" if introductory outcome already occurred
+  ✗ "Schedule discovery call" if discovery has already occurred
+Instead, recommend the newest UNRESOLVED gap:
+  ✓ "Obtain leadership feedback on the delivered analysis"
+  ✓ "Validate approval path with [decision maker name]"
+  ✓ "Schedule stakeholder review with marketing + sales"
+  ✓ "Confirm decision timeline and remaining objections"
+` : '';
+
+  const prompt = `You are extracting structured intelligence from a wholesale supplier call transcript for Vortex Origin Brands.
+
+EXISTING INTELLIGENCE on this supplier (do NOT duplicate, only update if new info contradicts or adds detail):
+${JSON.stringify(existingScorecard, null, 2)}
+
+CALL TYPE: ${callTypeLabel || callType || "unknown"}${brExtension}
+TRANSCRIPT:
+"""
+${fullTranscript.slice(0, 12000)}
+"""
+
+CRITICAL: Use ONLY the field names listed below. Do NOT invent new field names like "minimum_order_value", "payment_terms_days", or "_currency" suffixes. If the supplier says "minimum order is $5,000", store that string as commercial_terms.moq. If they say "Net 30", store "Net 30" as commercial_terms.payment_terms.
+
+ALLOWED FIELDS (strict — do not deviate):
+
+account_requirements:
+  - reseller_certificate_required (boolean)
+  - ein_required (boolean)
+  - credit_application_required (boolean)
+  - wholesale_agreement_required (boolean)
+  - references_required (boolean)
+
+commercial_terms:
+  - moq (string — e.g. "$5,000", "5000 units")
+  - reorder_minimum (string)
+  - payment_terms (string — e.g. "Net 30", "Prepaid", "Net 60 after approval")
+  - net_terms (string — only if different from payment_terms)
+  - freight_terms (string — e.g. "FOB origin", "Buyer pays")
+  - approval_timeline (string — e.g. "3-5 business days")
+
+product_information:
+  - product_categories (string[])
+  - key_brands (string[])
+  - fast_growing_categories (string[])
+  - focus_segments (string[])
+
+restrictions:
+  - marketplace_restrictions (string[])
+  - brand_restrictions (string[])
+  - geographic_restrictions (string[])
+  - dealer_requirements (string[])
+
+opportunities:
+  - categories_of_interest (string[])
+  - expansion_opportunities (string[])
+  - high_potential_brands (string[])
+
+Any field name not listed above WILL BE DISCARDED. Do not invent variants.
+
+Return ONLY a single JSON object with this exact shape (no prose, no markdown fences):
+{
+  "scorecard_updates": {
+    "account_requirements": { ...only fields from the allowed list, explicitly mentioned in this transcript... },
+    "commercial_terms": { ... },
+    "product_information": { ... },
+    "restrictions": { ... },
+    "opportunities": { ... },
+    "amazon_presence": { ... include ONLY for brand_registry calls when relevant ... },
+    "stakeholders": { ... include ONLY for brand_registry calls when relevant ... },
+    "concerns": { ... include ONLY for brand_registry calls when relevant ... },
+    "evaluation_process": { ... include ONLY for brand_registry calls when relevant ... }
+  },
+  "call_summary": "1-2 sentence summary of what happened in this call",
+  "key_learnings": ["3-5 bullet learnings as strings, each <120 chars"],
+  "outcome": "one of: Documents Requested | Application Under Review | Awaiting Response | Approved | Rejected | More Info Needed | Follow-Up Scheduled | Initial Contact",
+  "next_best_action": {
+    "action": "imperative sentence, max 80 chars",
+    "reason": "why this action now, 1 sentence",
+    "priority": "high | medium | low",
+    "due_in_days": 0
+  },
+  "follow_up": {
+    "due_in_days": 3,
+    "reason": "why we are following up",
+    "context": "1 sentence of context for the rep",
+    "suggested_message": "draft message the rep can send"
+  }
+}
+
+Rules:
+- Only fill scorecard fields that the transcript explicitly addresses. Omit fields not discussed.
+- Use ONLY the field names from the allowed list above. Invented names will be discarded.
+- For boolean fields, use true/false only when explicit; otherwise omit.
+- Store amounts as readable strings ("$5,000", "5000 units") — not numbers and not with extra _currency fields.
+- For arrays, only include items mentioned in this call (do not echo existing).
+- If the call is too short or off-topic, return scorecard_updates as {} and still produce summary/outcome/next_best_action.
+- next_best_action.due_in_days: 0=today, 1=tomorrow, integer days from now.
+- follow_up.due_in_days: same convention. Use 3-7 for most cases.`;
+
+  let parsed = null;
+  try {
+    const resp = await client.messages.create({
+      model: "claude-sonnet-4-5",
+      max_tokens: 2000,
+      messages: [{ role: "user", content: prompt }],
+    });
+    const text = (resp.content || []).map(b => b.text || "").join("");
+    // strip fences if present
+    const cleaned = text.replace(/```json\s*/gi, "").replace(/```\s*$/g, "").trim();
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      parsed = JSON.parse(cleaned.slice(start, end + 1));
+    }
+  } catch (e) {
+    console.error("[extractIntelligence] Claude/parse error:", e.message);
+    return null;
+  }
+
+  if (!parsed || typeof parsed !== "object") return null;
+
+  // ═══ Closed-schema validator: drop any field not in the canonical list (uses shared ALLOWED_FIELDS) ═══
+  if (parsed.scorecard_updates && typeof parsed.scorecard_updates === "object") {
+    for (const [section, fields] of Object.entries(parsed.scorecard_updates)) {
+      const allowedForSection = ALLOWED_FIELDS[section];
+      if (!allowedForSection) {
+        console.warn("[validator] dropping unknown section:", section);
+        delete parsed.scorecard_updates[section];
+        continue;
+      }
+      if (!fields || typeof fields !== "object") continue;
+      for (const key of Object.keys(fields)) {
+        if (!allowedForSection.includes(key)) {
+          console.warn(`[validator] dropping unknown field: ${section}.${key}`);
+          delete fields[key];
+        }
+      }
+    }
+  }
+
+  // ═══ Phase 3.1b: Field name normalization + confidence tracking ═══
+  // Maps Claude's name variations to canonical field names.
+  const FIELD_ALIASES = {
+    commercial_terms: {
+      moq_value: "moq", moq_amount: "moq", minimum_order: "moq", min_order_quantity: "moq",
+      moq_clarification_needed: null, // discard meta-flags
+      net_terms_days: "net_terms", payment_net: "net_terms",
+      payment_method: "payment_terms", terms: "payment_terms",
+      approval_timeline_days: "approval_timeline", approval_time: "approval_timeline",
+      freight: "freight_terms", shipping_terms: "freight_terms",
+      reorder_min: "reorder_minimum", reorder_moq: "reorder_minimum",
+    },
+    account_requirements: {
+      reseller_cert_required: "reseller_certificate_required",
+      reseller_certificate: "reseller_certificate_required",
+      ein: "ein_required",
+      credit_app_required: "credit_application_required",
+      credit_application: "credit_application_required",
+      credit_application_process: null, // process description, not a requirement flag
+      wholesale_agreement: "wholesale_agreement_required",
+      references: "references_required",
+    },
+    product_information: {
+      categories: "product_categories", brands: "key_brands",
+      growing_categories: "fast_growing_categories", focus: "focus_segments",
+    },
+    restrictions: {
+      marketplace: "marketplace_restrictions", brand: "brand_restrictions",
+      geographic: "geographic_restrictions", geo: "geographic_restrictions",
+      dealer: "dealer_requirements",
+    },
+    opportunities: {
+      interest_categories: "categories_of_interest",
+      expansion: "expansion_opportunities",
+      high_potential: "high_potential_brands", potential_brands: "high_potential_brands",
+    },
+  };
+
+  function normalizeFieldName(section, key) {
+    const aliases = FIELD_ALIASES[section] || {};
+    if (key in aliases) return aliases[key]; // may be null = discard
+    return key; // canonical or unknown — pass through
+  }
+
+  // Infer confidence: explicit + clear value = high; flagged ambiguous = medium; one mention = medium
+  function inferConfidence(value, key, section) {
+    if (Array.isArray(value)) return value.length >= 2 ? "high" : "medium";
+    if (typeof value === "boolean") return "high";
+    if (typeof value === "string" || typeof value === "number") {
+      const s = String(value).toLowerCase();
+      if (s.includes("unclear") || s.includes("tbd") || s.includes("unknown") || s.includes("?")) return "low";
+      return "medium";
+    }
+    return "low";
+  }
+
+  const mergedScorecard = JSON.parse(JSON.stringify(existingScorecard));
+  const updates = parsed.scorecard_updates || {};
+
+  for (const [section, fields] of Object.entries(updates)) {
+    if (!fields || typeof fields !== "object") continue;
+    if (!mergedScorecard[section]) mergedScorecard[section] = {};
+
+    for (const [rawKey, v] of Object.entries(fields)) {
+      if (v === null || v === undefined || v === "") continue;
+      const k = normalizeFieldName(section, rawKey);
+      if (k === null) continue; // explicitly discarded
+      if (!k) continue;
+
+      // Confidence object lives alongside value: { value, confidence, sources_count, last_updated, last_value }
+      const existing = mergedScorecard[section][k];
+      const existingObj = (existing && typeof existing === "object" && "value" in existing) ? existing : null;
+
+      // FIX: Claude sometimes returns a pre-wrapped {value, confidence} object because it sees the existing shape in the prompt.
+      // Unwrap recursively to get the raw value.
+      let rawV = v;
+      let claudeConf = null;
+      while (rawV && typeof rawV === "object" && !Array.isArray(rawV) && "value" in rawV) {
+        if (!claudeConf && rawV.confidence) claudeConf = rawV.confidence;
+        rawV = rawV.value;
+      }
+
+      if (Array.isArray(rawV)) {
+        const existingArr = existingObj ? (Array.isArray(existingObj.value) ? existingObj.value : []) : (Array.isArray(existing) ? existing : []);
+        const merged = Array.from(new Set([...existingArr, ...rawV.filter(Boolean)]));
+        mergedScorecard[section][k] = {
+          value: merged,
+          confidence: claudeConf || (merged.length >= 2 ? "high" : "medium"),
+          sources_count: (existingObj?.sources_count || 0) + 1,
+          last_updated: new Date().toISOString(),
+        };
+      } else {
+        const newConf = claudeConf || inferConfidence(rawV, k, section);
+        // If value matches existing → bump confidence
+        const sameAsExisting = existingObj && String(existingObj.value).toLowerCase() === String(rawV).toLowerCase();
+        const promotedConf = sameAsExisting && existingObj.confidence !== "high" ? "high" : newConf;
+        mergedScorecard[section][k] = {
+          value: rawV,
+          confidence: promotedConf,
+          sources_count: (existingObj?.sources_count || 0) + 1,
+          last_updated: new Date().toISOString(),
+        };
+      }
+    }
+  }
+
+  return {
+    mergedScorecard,
+    call_summary: parsed.call_summary || null,
+    key_learnings: Array.isArray(parsed.key_learnings) ? parsed.key_learnings : [],
+    outcome: parsed.outcome || null,
+    next_best_action: parsed.next_best_action || null,
+    follow_up: parsed.follow_up || null,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AI RELATIONSHIP SUMMARY + TRUST + FIT (Priorities 1, 4, 5)
+// ═══════════════════════════════════════════════════════════════════════════════
+async function generateRelationshipBundle(supplier, recentCalls, primaryCallType) {
+  const scorecard = supplier.intelligence_scorecard || {};
+  const openQuestions = Array.isArray(supplier.open_questions) ? supplier.open_questions : [];
+  const objections = Array.isArray(supplier.known_objections) ? supplier.known_objections : [];
+  const restrictions = Array.isArray(supplier.known_restrictions) ? supplier.known_restrictions : [];
+
+  const callsBlock = (recentCalls || []).slice(0, 5).map(c =>
+    `- ${c.call_date?.slice(0,10) || "?"} | ${c.call_type || "call"} | ${c.outcome || "—"} | ${c.call_summary || c.transcript_summary || ""}`
+  ).join("\n") || "No calls yet.";
+
+  const prompt = `You are generating a structured supplier-relationship briefing for Vortex Origin Brands (a wholesale Amazon channel-management company) about one of their prospect suppliers.
+
+SUPPLIER:
+- Name: ${supplier.company_name}
+- Category: ${supplier.supplier_category || "unknown"}
+- Stage: ${supplier.relationship_stage || "Prospect"}
+- Contact: ${supplier.contact_name || "—"} (${supplier.contact_email || "no email"})
+- Total calls: ${supplier.total_calls_count || 0}
+
+EXISTING SCORECARD:
+${JSON.stringify(scorecard, null, 2)}
+
+OPEN QUESTIONS:
+${JSON.stringify(openQuestions)}
+
+KNOWN OBJECTIONS:
+${JSON.stringify(objections)}
+
+KNOWN RESTRICTIONS:
+${JSON.stringify(restrictions)}
+
+RECENT CALL OUTCOMES:
+${callsBlock}
+
+EXISTING RELATIONSHIP NOTES:
+${supplier.relationship_summary || "—"}
+
+${primaryCallType === 'brand_registry' ? `
+═══════════════════════════════════════════════════════════════
+BRAND REGISTRY MODE — SUMMARY PRIORITIES (CRITICAL)
+═══════════════════════════════════════════════════════════════
+This is a Brand Registry relationship. Generate the summary with these priorities:
+
+PRIORITY ORDER for ai_summary:
+  1. CURRENT evaluation status (where the conversation is RIGHT NOW)
+  2. Active concerns (distributor conflict, brand representation, pricing control, etc.)
+  3. Stakeholder structure (who decides, who influences, who blocks)
+  4. Approval / evaluation process
+  5. Remaining open questions
+  6. Historical awareness facts — these go LAST and only if they're still relevant
+
+RELATIONSHIP_STATUS RULE:
+  ❌ BAD (stuck in Call #1): "Contact was unaware of Amazon activity"
+  ✅ GOOD (current reality): "Leadership is evaluating whether Amazon can complement existing distributor relationships without creating channel conflict. Primary concern is distributor protection and strategic fit."
+
+KNOWN_FACTS RULE:
+  Include current stakeholder map, active concerns, evaluation criteria, decision process — NOT call #1 discoveries unless still actionable.
+
+RECOMMENDED_NEXT_STEP RULE:
+  Must target the newest UNRESOLVED intelligence gap. Check the recent call outcomes — if "Analysis delivered" appears, do NOT suggest delivering analysis. Suggest: "Obtain leadership feedback on analysis" / "Validate approval process with [Decision Maker]" / "Schedule stakeholder review" / "Understand decision timeline".
+
+FIT_SCORE WEIGHTING (Brand Registry-specific):
+  Pre-commercial qualification (no MOQ in scorecard), use STRATEGIC weights:
+    - stakeholder_access (25): how well we know the stakeholder map
+    - concern_alignment (25): clarity on their concerns and our ability to address them
+    - marketplace_opportunity (20): size of Amazon opportunity for the brand
+    - internal_readiness (15): leadership engagement, internal buy-in
+    - leadership_engagement (15): direct access to decision makers
+  Re-label the JSON keys accordingly when in pre-commercial mode:
+    "moq_compatibility" → "stakeholder_access"
+    "payment_terms" → "concern_alignment"
+    "product_fit" → "marketplace_opportunity"
+    "communication_quality" → "internal_readiness"
+    "restrictions" → "leadership_engagement"
+  Once commercial qualification has begun (commercial_terms.moq exists), revert to standard wholesale weights as labeled.
+
+KNOWN_CONCERNS RULE:
+  Pull from the concerns section of the scorecard if populated. These are first-class for BR.
+
+DO NOT FORGET: this is a Brand Registry call, not a wholesale supplier qualification. The relationship narrative is about Amazon strategy fit, not about MOQ and payment terms.
+` : ''}
+
+Return ONLY a single JSON object with this exact shape (no prose, no markdown):
+{
+  "ai_summary": {
+    "relationship_status": "1-2 sentence narrative of where the relationship is",
+    "known_facts": ["3-7 short bullets of confirmed factual intel"],
+    "known_concerns": ["0-4 short bullets of risks/objections, [] if none"],
+    "open_questions": ["0-5 short bullets of unanswered questions, [] if none"],
+    "recommended_next_step": "one imperative sentence"
+  },
+  "trust_breakdown": {
+    "responsiveness": {"score": 0, "max": 10, "reason": "1 short sentence"},
+    "communication": {"score": 0, "max": 10, "reason": "1 short sentence"},
+    "openness": {"score": 0, "max": 10, "reason": "1 short sentence"},
+    "account_potential": {"score": 0, "max": 10, "reason": "1 short sentence"},
+    "restrictions_risk": {"score": 0, "max": 10, "reason": "1 short sentence (high score = LOW risk)"},
+    "overall": 0
+  },
+  "fit_score": {
+    "moq_compatibility": {"score": 0, "max": 25, "reason": ""},
+    "payment_terms": {"score": 0, "max": 25, "reason": ""},
+    "product_fit": {"score": 0, "max": 20, "reason": ""},
+    "communication_quality": {"score": 0, "max": 15, "reason": ""},
+    "restrictions": {"score": 0, "max": 15, "reason": ""},
+    "overall": 0
+  },
+  "stage_recommendation": {
+    "suggested_stage": "Prospect | Contacted | Qualified | Application Sent | Approved | First Order | Active Account",
+    "current_stage": "${supplier.relationship_stage || "Prospect"}",
+    "should_change": true,
+    "reason": "1 sentence"
+  }
+}
+
+Rules:
+- Be conservative. Only state facts the data supports.
+- known_facts must come from scorecard or call outcomes, not invented.
+- trust_breakdown.overall = average of the 5 sub-scores, rounded 1 decimal.
+- fit_score.overall = sum of the 5 sub-scores.
+- For restrictions_risk: 10 means no restrictions concerns; 0 means severe restrictions blocking deal.
+- stage_recommendation.should_change = true only if data strongly supports upgrading; otherwise false with reason explaining what's still needed.`;
+
+  try {
+    const resp = await client.messages.create({
+      model: "claude-sonnet-4-5",
+      max_tokens: 2200,
+      messages: [{ role: "user", content: prompt }],
+    });
+    const text = (resp.content || []).map(b => b.text || "").join("");
+    const cleaned = text.replace(/```json\s*/gi, "").replace(/```\s*$/g, "").trim();
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}");
+    if (start < 0 || end <= start) return null;
+    return JSON.parse(cleaned.slice(start, end + 1));
+  } catch (e) {
+    console.error("[generateRelationshipBundle] error:", e.message);
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PHASE 3.2: EVIDENCE GATING HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+function countScorecardFields(scorecard) {
+  if (!scorecard || typeof scorecard !== "object") return 0;
+  let n = 0;
+  for (const section of Object.values(scorecard)) {
+    if (!section || typeof section !== "object") continue;
+    for (const v of Object.values(section)) {
+      // Handle both new {value, confidence} shape and legacy raw values
+      const raw = (v && typeof v === "object" && "value" in v) ? v.value : v;
+      if (raw === null || raw === undefined || raw === "") continue;
+      if (Array.isArray(raw) && raw.length === 0) continue;
+      n++;
+    }
+  }
+  return n;
+}
+
+function computeEvidence(supplier) {
+  const totalCalls = supplier.total_calls_count || 0;
+  const populatedFields = countScorecardFields(supplier.intelligence_scorecard || {});
+
+  let evidence_level, evidence_label;
+  if (totalCalls === 0) {
+    evidence_level = "low";
+    evidence_label = "Based on 0 calls — generated from supplier profile and notes.";
+  } else if (totalCalls <= 2) {
+    evidence_level = "medium";
+    evidence_label = `Based on ${totalCalls} call${totalCalls === 1 ? "" : "s"} and supplier profile.`;
+  } else {
+    evidence_level = "high";
+    evidence_label = `Based on ${totalCalls} calls and structured intelligence.`;
+  }
+
+  return {
+    total_calls: totalCalls,
+    populated_scorecard_fields: populatedFields,
+    evidence_level,
+    evidence_label,
+    gates: {
+      summary: "open", // always allowed; badge communicates confidence
+      trust: totalCalls >= 2 ? "open" : "gated",
+      fit: (totalCalls >= 1 && populatedFields >= 3) ? "open" : "gated",
+    },
+    gate_reasons: {
+      trust: totalCalls < 2 ? "Not enough interaction history to evaluate supplier trust." : null,
+      fit: !(totalCalls >= 1 && populatedFields >= 3) ? "Additional supplier intelligence required." : null,
+    },
+  };
+}
+
+app.get("/api/suppliers/:id/summary", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const force = req.query.refresh === "1";
+
+    const { data: supplier } = await supabase
+      .from("supplier_memory").select("*").eq("id", id).single();
+    if (!supplier) return res.status(404).json({ error: "Supplier not found" });
+
+    const evidence = computeEvidence(supplier);
+
+    // Helper to apply gates to a bundle (strip gated sections before saving/returning)
+    const applyGates = (b) => {
+      const out = { ...b };
+      if (evidence.gates.trust === "gated") out.trust_breakdown = null;
+      if (evidence.gates.fit === "gated") out.fit_score = null;
+      return out;
+    };
+
+    // Return cached if available and not forced
+    if (!force && supplier.ai_summary && supplier.ai_summary_updated_at) {
+      const gated = applyGates({
+        ai_summary: supplier.ai_summary,
+        trust_breakdown: supplier.trust_breakdown,
+        fit_score: supplier.fit_score,
+      });
+      return res.json({
+        cached: true,
+        updated_at: supplier.ai_summary_updated_at,
+        evidence,
+        ...gated,
+      });
+    }
+
+    const { data: recentCalls } = await supabase
+      .from("call_history").select("*")
+      .eq("supplier_id", id).order("call_date", { ascending: false }).limit(5);
+
+    const primaryCallType = (recentCalls && recentCalls[0] && recentCalls[0].call_type) || null;
+    const bundle = await generateRelationshipBundle(supplier, recentCalls || [], primaryCallType);
+    if (!bundle) return res.status(500).json({ error: "Generation failed" });
+
+    const gated = applyGates(bundle);
+    const now = new Date().toISOString();
+    const update = {
+      ai_summary: gated.ai_summary || null,
+      ai_summary_updated_at: now,
+      trust_breakdown: gated.trust_breakdown || null,
+      fit_score: gated.fit_score || null,
+    };
+
+    // Only set top-level trust_score if not gated
+    if (evidence.gates.trust === "open" && gated.trust_breakdown?.overall != null) {
+      update.trust_score = gated.trust_breakdown.overall;
+    }
+
+    await supabase.from("supplier_memory").update(update).eq("id", id);
+
+    res.json({
+      cached: false,
+      updated_at: now,
+      evidence,
+      ai_summary: gated.ai_summary,
+      trust_breakdown: gated.trust_breakdown,
+      fit_score: gated.fit_score,
+      stage_recommendation: bundle.stage_recommendation,
+    });
+  } catch (err) {
+    console.error("[/api/suppliers/:id/summary] error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FOLLOW-UP SEMANTIC DEDUP (Phase 3.1a)
+// Returns the existing follow_up row if a semantically equivalent pending follow-up
+// exists for this supplier; otherwise null. Uses fast text overlap first, falls
+// back to Claude only when text overlap is ambiguous.
+// ═══════════════════════════════════════════════════════════════════════════════
+function _normalizeFuText(s) {
+  return (s || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\b(the|a|an|and|or|to|for|of|in|on|with|please|kindly|asap|quickly|soon)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function _tokenJaccard(a, b) {
+  const sa = new Set(_normalizeFuText(a).split(" ").filter(t => t.length > 2));
+  const sb = new Set(_normalizeFuText(b).split(" ").filter(t => t.length > 2));
+  if (sa.size === 0 || sb.size === 0) return 0;
+  let inter = 0;
+  for (const t of sa) if (sb.has(t)) inter++;
+  const union = sa.size + sb.size - inter;
+  return inter / union;
+}
+
+async function findDuplicateFollowUp({ supplierId, newReason, newContext }) {
+  const { data: existing } = await supabase
+    .from("follow_ups")
+    .select("*")
+    .eq("supplier_id", supplierId)
+    .eq("status", "pending");
+
+  if (!existing || existing.length === 0) return null;
+
+  const candidateText = `${newReason || ""} ${newContext || ""}`.trim();
+  if (!candidateText) return null;
+
+  // Fast pre-filter: token Jaccard
+  const scored = existing.map(f => ({
+    row: f,
+    score: _tokenJaccard(candidateText, `${f.reason || ""} ${f.note || ""} ${f.context || ""}`),
+  })).sort((a, b) => b.score - a.score);
+
+  const best = scored[0];
+  if (!best) return null;
+
+  // Strong overlap → definitely a duplicate
+  if (best.score >= 0.45) return best.row;
+
+  // Detect common "umbrella" patterns where surface text varies but intent is identical
+  const norm = (s) => _normalizeFuText(s);
+  const cA = norm(candidateText);
+  const cB = norm(`${best.row.reason || ""} ${best.row.note || ""} ${best.row.context || ""}`);
+  const umbrellas = [
+    ["awaiting", "await", "wait", "pending response", "no response"],
+    ["follow up", "followup", "reconnect", "circle back", "reach back"],
+    ["credit application", "credit app", "application package", "application form"],
+    ["moq", "minimum order"],
+    ["map policy", "map enforcement", "map compliance"],
+  ];
+  const sharesUmbrella = umbrellas.some(group => {
+    const aHit = group.some(t => cA.includes(t));
+    const bHit = group.some(t => cB.includes(t));
+    return aHit && bHit;
+  });
+  if (sharesUmbrella && best.score >= 0.20) {
+    console.log("[findDuplicateFollowUp] umbrella match:", best.score.toFixed(2));
+    return best.row;
+  }
+
+  // Weak overlap, no umbrella → use Claude to decide
+  if (best.score < 0.20 && !sharesUmbrella) return null;
+
+  try {
+    const prompt = `Are these two follow-up tasks blocking on the same underlying supplier action? Reply ONLY with "YES" or "NO".
+
+TASK A: ${candidateText}
+TASK B: ${best.row.reason || ""} ${best.row.note || ""} ${best.row.context || ""}
+
+Same if: both wait on supplier reply, both need same document, both clarify same field, both push for same decision.
+Different if: genuinely different topics (e.g. one about MOQ, other about MAP policy).`;
+    const resp = await client.messages.create({
+      model: "claude-sonnet-4-5",
+      max_tokens: 10,
+      messages: [{ role: "user", content: prompt }],
+    });
+    const answer = (resp.content || []).map(b => b.text || "").join("").trim().toUpperCase();
+    if (answer.startsWith("YES")) return best.row;
+  } catch (e) {
+    console.error("[findDuplicateFollowUp] Claude dedup error:", e.message);
+    if (best.score >= 0.3) return best.row;
+  }
+  return null;
+}
+
+app.post("/api/call-end", async (req, res) => {
+  try {
+    const { supplierId, companyName, callType, callTypeLabel, transcript, conversationHistory } = req.body;
+
+    let supplier = null;
+    if (supplierId) {
+      const { data } = await supabase
+        .from("supplier_memory")
+        .select("*")
+        .eq("id", supplierId)
+        .single();
+      supplier = data;
+    } else if (companyName) {
+      supplier = await findSupplier(companyName);
+    }
+
+    if (!supplier) {
+      return res.status(404).json({ error: "Supplier not found", supplierId, companyName });
+    }
+
+    const fullTranscript = (transcript || "") + " " + (conversationHistory || []).map(t => t.text || "").join(" ");
+    const signals = extractTranscriptSignals(fullTranscript);
+    const newRiskFlags = signals.risk_signals || [];
+    const newObjections = signals.objection_signals || [];
+
+    const summary = `Call type: ${callType || "unknown"}. Transcript length: ${fullTranscript.length} chars. Engagement: ${signals.signal_patterns?.engagement_indicators || "unknown"}. Pattern: ${signals.pattern_match?.best_match || "unknown"}.`;
+
+    const existingRiskFlags = Array.isArray(supplier.risk_flags) ? supplier.risk_flags : [];
+    const existingObjections = Array.isArray(supplier.known_objections) ? supplier.known_objections : [];
+    const mergedRiskFlags = Array.from(new Set([...existingRiskFlags, ...newRiskFlags]));
+    const mergedObjections = Array.from(new Set([...existingObjections, ...newObjections]));
+
+    const currentCount = supplier.total_calls_count || 0;
+
+    // ───── PHASE 2: Intelligence extraction (best-effort, non-blocking on failure) ─────
+    let intel = null;
+    try {
+      if (fullTranscript.trim().length > 60) {
+        const { data: _timelineRows } = await supabase
+          .from("call_history").select("call_date, outcome, call_summary")
+          .eq("supplier_id", supplier.id)
+          .order("call_date", { ascending: false }).limit(5);
+        intel = await extractIntelligence({ supplier, fullTranscript, callType, callTypeLabel, recentTimeline: _timelineRows || [] });
+      }
+    } catch (e) {
+      console.error("[call-end] intel extraction failed:", e.message);
+    }
+
+    const supplierUpdate = {
+      last_call_summary: summary,
+      last_call_date: new Date().toISOString(),
+      total_calls_count: currentCount + 1,
+      risk_flags: mergedRiskFlags,
+      known_objections: mergedObjections,
+    };
+
+    if (intel) {
+      supplierUpdate.intelligence_scorecard = intel.mergedScorecard;
+      // Brand Registry uses specialized 5-stage ladder; other call types use canonical
+      supplierUpdate.open_questions = (callType === 'brand_registry')
+        ? brandRegistryOpenQuestions(intel.mergedScorecard)
+        : computeOpenQuestions(intel.mergedScorecard);
+      console.log(`[call-end] recomputed open_questions (${callType}): ${supplierUpdate.open_questions.length} remaining`);
+      // ═══ Relationship Stage Engine: auto-detect stage from scorecard + outcome ═══
+      const stageResult = determineStage(supplier, intel.mergedScorecard, intel.outcome);
+      supplierUpdate.relationship_stage = stageResult.stage;
+      supplierUpdate.stage_reason = stageResult.reason; // diagnostic, temporary
+      console.log(`[call-end] stage: ${stageResult.stage} — ${stageResult.reason}`);
+      // Architecture C: clear live session scratchpad now that we've persisted
+      const endSessionId = req.body.session_id;
+      if (endSessionId && liveSessions.has(endSessionId)) {
+        liveSessions.delete(endSessionId);
+        console.log(`[call-end] cleared live session ${endSessionId}`);
+      }
+      supplierUpdate.ai_summary_updated_at = null; // invalidate cache so summary regenerates
+      if (intel.next_best_action) {
+        const due = new Date();
+        due.setDate(due.getDate() + (intel.next_best_action.due_in_days || 0));
+        supplierUpdate.next_best_action = {
+          action: intel.next_best_action.action || null,
+          reason: intel.next_best_action.reason || null,
+          priority: intel.next_best_action.priority || "medium",
+          due_date: due.toISOString(),
+          created_at: new Date().toISOString(),
+        };
+      }
+    }
+
+    const { data: updated, error } = await supabase
+      .from("supplier_memory")
+      .update(supplierUpdate)
+      .eq("id", supplier.id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("call-end update error:", error);
+      return res.status(500).json({ error: error.message });
+    }
+
+    // ───── Phase 3.1c (revised): Strict novelty = new scorecard fields only ─────
+    let isNovel = true;
+    let novelLearnings = intel?.key_learnings || [];
+    let newFieldsCount = 0;
+    if (intel) {
+      const existing = supplier.intelligence_scorecard || {};
+      for (const [section, fields] of Object.entries(intel.mergedScorecard || {})) {
+        if (!fields || typeof fields !== "object") continue;
+        for (const [k, v] of Object.entries(fields)) {
+          const wasMissing = !existing[section] || !(k in existing[section]);
+          if (wasMissing) newFieldsCount++;
+        }
+      }
+
+      // STRICT: only call it "novel" if scorecard actually gained fields.
+      // key_learnings alone don't count — Claude rephrases the same facts every call.
+      isNovel = newFieldsCount > 0;
+
+      // If we have new fields, keep the learnings. Otherwise empty.
+      novelLearnings = isNovel ? (intel.key_learnings || []) : [];
+    }
+    console.log(`[call-end] novelty: newFieldsCount=${newFieldsCount}, isNovel=${isNovel}`);
+
+    // ───── Write call_history row (timeline source of truth) ─────
+    try {
+      const effectiveSummary = isNovel
+        ? (intel?.call_summary || summary)
+        : "No new supplier intelligence learned in this call.";
+      const effectiveOutcome = isNovel
+        ? (intel?.outcome || null)
+        : "No New Intelligence";
+      const effectiveLearnings = isNovel ? (novelLearnings.length > 0 ? novelLearnings : (intel?.key_learnings || [])) : [];
+
+      await supabase.from("call_history").insert({
+        supplier_id: supplier.id,
+        call_type: callTypeLabel || callType || "unknown",
+        call_date: new Date().toISOString(),
+        transcript_summary: effectiveSummary,
+        full_transcript: fullTranscript.slice(0, 50000),
+        engagement_pattern: signals.signal_patterns?.engagement_indicators || null,
+        call_summary: effectiveSummary,
+        key_learnings: effectiveLearnings,
+        outcome: effectiveOutcome,
+      });
+    } catch (e) {
+      console.error("[call-end] call_history insert failed:", e.message);
+    }
+
+    // ───── Auto-create OR update follow-up (with semantic dedup, Phase 3.1a) ─────
+    let createdFollowUp = null;
+    let updatedFollowUp = null;
+    if (intel?.follow_up && intel.follow_up.due_in_days !== undefined) {
+      try {
+        const due = new Date();
+        due.setDate(due.getDate() + (intel.follow_up.due_in_days || 3));
+
+        const dup = await findDuplicateFollowUp({
+          supplierId: supplier.id,
+          newReason: intel.follow_up.reason,
+          newContext: intel.follow_up.context,
+        });
+
+        if (dup) {
+          // Update existing: refresh due date, latest context + suggested message
+          const { data: refreshed } = await supabase.from("follow_ups").update({
+            due_date: due.toISOString(),
+            reason: intel.follow_up.reason || dup.reason,
+            context: intel.follow_up.context || dup.context,
+            suggested_message: intel.follow_up.suggested_message || dup.suggested_message,
+            note: intel.follow_up.reason || dup.note,
+          }).eq("id", dup.id).select().single();
+          updatedFollowUp = refreshed;
+        } else {
+          const { data: fu } = await supabase.from("follow_ups").insert({
+            supplier_id: supplier.id,
+            due_date: due.toISOString(),
+            follow_up_type: "call",
+            note: intel.follow_up.reason || null,
+            reason: intel.follow_up.reason || null,
+            context: intel.follow_up.context || null,
+            suggested_message: intel.follow_up.suggested_message || null,
+            status: "pending",
+          }).select().single();
+          createdFollowUp = fu;
+        }
+      } catch (e) {
+        console.error("[call-end] follow_up insert/update failed:", e.message);
+      }
+    }
+
+    res.json({
+      success: true,
+      supplier_id: supplier.id,
+      company_name: supplier.company_name,
+      updates_written: {
+        last_call_summary: summary,
+        last_call_date: updated.last_call_date,
+        total_calls_count: updated.total_calls_count,
+        risk_flags_added: newRiskFlags.length,
+        objections_added: newObjections.length,
+        intelligence_extracted: !!intel,
+        outcome: intel?.outcome || null,
+        next_best_action: updated.next_best_action || null,
+        follow_up_created: !!createdFollowUp,
+        follow_up_updated: !!updatedFollowUp,
+      },
+    });
+  } catch (err) {
+    console.error("call-end exception:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SUPPLIER MANAGEMENT ENDPOINTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+app.post("/api/suppliers", async (req, res) => {
+  try {
+    const {
+      company_name,
+      website,
+      supplier_category,
+      relationship_stage,
+      relationship_summary,
+      contact_name,
+      contact_email,
+      contact_phone,
+      open_questions,
+      known_objections,
+      known_restrictions,
+      primary_workflow,
+    } = req.body;
+
+    if (!company_name || !company_name.trim()) {
+      return res.status(400).json({ error: "company_name required" });
+    }
+
+    const normalized = company_name.trim().toLowerCase();
+
+    const { data: existing } = await supabase
+      .from("supplier_memory")
+      .select("id, company_name")
+      .eq("normalized_name", normalized)
+      .is("archived_at", null)
+      .maybeSingle();
+
+    if (existing) {
+      return res.status(409).json({ error: "Supplier already exists", existing });
+    }
+
+    const ALLOWED_WORKFLOWS = ["brand_registry", "distributor_inquiry", "retail_inquiry", "quick_note", "wholesale_inquiry"];
+    const normalizedWorkflow = ALLOWED_WORKFLOWS.includes(primary_workflow) ? primary_workflow : "distributor_inquiry";
+    const insertRow = {
+      company_name: company_name.trim(),
+      normalized_name: normalized,
+      primary_workflow: normalizedWorkflow,
+      website: website?.trim() || null,
+      supplier_category: supplier_category?.trim() || null,
+      relationship_stage: relationship_stage || "Prospect",
+      relationship_summary: relationship_summary?.trim() || null,
+      contact_name: contact_name?.trim() || null,
+      contact_email: contact_email?.trim() || null,
+      contact_phone: contact_phone?.trim() || null,
+      trust_score: 5,
+      total_calls_count: 0,
+      open_questions: (() => {
+        // Option 2: seed with full canonical list if caller didn't specify
+        const userSupplied = Array.isArray(open_questions)
+          ? open_questions.filter(q => q && (q.question || typeof q === "string"))
+          : [];
+        if (userSupplied.length > 0) return userSupplied;
+        // Default: seed with computed open questions against empty scorecard = all canonical questions
+        return computeOpenQuestions({});
+      })(),
+      known_objections: Array.isArray(known_objections) ? known_objections.filter(Boolean) : [],
+      known_restrictions: Array.isArray(known_restrictions) ? known_restrictions.filter(Boolean) : [],
+    };
+
+    const { data, error } = await supabase
+      .from("supplier_memory")
+      .insert(insertRow)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("[POST /api/suppliers] insert error:", error);
+      return res.status(500).json({ error: error.message });
+    }
+
+    res.json({ success: true, supplier: data });
+  } catch (err) {
+    console.error("[POST /api/suppliers] error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ═══ Soft-delete (archive) + restore endpoints ═══
+app.post("/api/suppliers/:id/archive", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data, error } = await supabase
+      .from("supplier_memory")
+      .update({ archived_at: new Date().toISOString() })
+      .eq("id", id)
+      .select("id, company_name, archived_at")
+      .single();
+    if (error) return res.status(500).json({ error: error.message });
+    if (!data) return res.status(404).json({ error: "Supplier not found" });
+    console.log(`[archive] supplier ${data.company_name} (${id}) archived`);
+    res.json({ success: true, supplier: data });
+  } catch (err) {
+    console.error("[archive] error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/suppliers/:id/restore", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data, error } = await supabase
+      .from("supplier_memory")
+      .update({ archived_at: null })
+      .eq("id", id)
+      .select("id, company_name")
+      .single();
+    if (error) return res.status(500).json({ error: error.message });
+    if (!data) return res.status(404).json({ error: "Supplier not found" });
+    console.log(`[restore] supplier ${data.company_name} (${id}) restored`);
+    res.json({ success: true, supplier: data });
+  } catch (err) {
+    console.error("[restore] error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/suppliers", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("supplier_memory")
+      .select("id, company_name, supplier_category, trust_score, total_calls_count, last_call_date, relationship_stage, relationship_summary, primary_workflow, archived_at")
+      .is("archived_at", null)
+      .order("company_name", { ascending: true });
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ suppliers: data || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PHASE 2: CRM ENDPOINTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Get single supplier with full detail
+app.get("/api/suppliers/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data, error } = await supabase
+      .from("supplier_memory")
+      .select("*")
+      .eq("id", id)
+      .single();
+    if (error) return res.status(404).json({ error: error.message });
+    res.json({ supplier: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update supplier fields
+app.patch("/api/suppliers/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const allowedFields = [
+      "company_name", "website", "supplier_category",
+      "relationship_stage", "relationship_summary",
+      "contact_name", "contact_email", "contact_phone",
+      "open_questions", "known_objections", "known_restrictions",
+      "next_follow_up_date",
+    ];
+    const updates = {};
+    for (const k of allowedFields) {
+      if (k in req.body) updates[k] = req.body[k];
+    }
+    if (updates.company_name) {
+      updates.normalized_name = updates.company_name.trim().toLowerCase();
+    }
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: "no valid fields to update" });
+    }
+    const { data, error } = await supabase
+      .from("supplier_memory")
+      .update(updates)
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ supplier: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get call history for a supplier
+app.get("/api/suppliers/:id/calls", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data, error } = await supabase
+      .from("call_history")
+      .select("*")
+      .eq("supplier_id", id)
+      .order("call_date", { ascending: false })
+      .limit(50);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ calls: data || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get all upcoming follow-ups (across all suppliers)
+app.get("/api/follow-ups", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("follow_ups")
+      .select("*, supplier_memory!inner(company_name)")
+      .eq("status", "pending")
+      .order("due_date", { ascending: true });
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ follow_ups: data || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get follow-ups for a specific supplier
+app.get("/api/suppliers/:id/follow-ups", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data, error } = await supabase
+      .from("follow_ups")
+      .select("*")
+      .eq("supplier_id", id)
+      .order("due_date", { ascending: true });
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ follow_ups: data || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create follow-up
+app.post("/api/follow-ups", async (req, res) => {
+  try {
+    const { supplier_id, due_date, follow_up_type, note } = req.body;
+    if (!supplier_id || !due_date) {
+      return res.status(400).json({ error: "supplier_id and due_date required" });
+    }
+    const { data, error } = await supabase
+      .from("follow_ups")
+      .insert({
+        supplier_id,
+        due_date,
+        follow_up_type: follow_up_type || "call",
+        note: note || null,
+        status: "pending",
+      })
+      .select()
+      .single();
+    if (error) return res.status(500).json({ error: error.message });
+
+    // Also update supplier next_follow_up_date if this is the earliest
+    await supabase
+      .from("supplier_memory")
+      .update({ next_follow_up_date: due_date })
+      .eq("id", supplier_id)
+      .or(`next_follow_up_date.is.null,next_follow_up_date.gt.${due_date}`);
+
+    res.json({ follow_up: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Mark follow-up complete or update
+app.patch("/api/follow-ups/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, note, due_date } = req.body;
+    const updates = {};
+    if (status) {
+      updates.status = status;
+      if (status === "completed") updates.completed_at = new Date().toISOString();
+    }
+    if (note !== undefined) updates.note = note;
+    if (due_date) updates.due_date = due_date;
+    const { data, error } = await supabase
+      .from("follow_ups")
+      .update(updates)
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ follow_up: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Dashboard KPIs
+app.get("/api/dashboard/kpis", async (req, res) => {
+  try {
+    const now = new Date();
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const [totalRes, activeRes, followUpRes, recentCallsRes] = await Promise.all([
+      supabase.from("supplier_memory").select("id", { count: "exact", head: true })
+        .is("archived_at", null),
+      supabase.from("supplier_memory").select("id", { count: "exact", head: true })
+        .is("archived_at", null)
+        .in("relationship_stage", ["In Discussion", "Approved", "Active Supplier"]),
+      supabase.from("follow_ups").select("id", { count: "exact", head: true })
+        .eq("status", "pending"),
+      supabase.from("call_history").select("id", { count: "exact", head: true })
+        .gte("call_date", weekAgo),
+    ]);
+
+    res.json({
+      total_suppliers: totalRes.count || 0,
+      active_suppliers: activeRes.count || 0,
+      pending_follow_ups: followUpRes.count || 0,
+      calls_last_7_days: recentCallsRes.count || 0,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Phase 2 Intelligence Engine: ${process.env.PHASE_2_ENABLED === 'false' ? 'DISABLED' : 'ENABLED'}`);

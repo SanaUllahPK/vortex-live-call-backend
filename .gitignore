@@ -1,0 +1,14 @@
+.env
+.env.local
+.env.*.local
+node_modules/
+*.log
+nohup.out
+.DS_Store
+.vscode/
+.idea/
+*.backup
+*.backup-*
+*.backup.*
+dist/
+build/
