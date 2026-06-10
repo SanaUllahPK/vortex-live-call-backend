@@ -871,7 +871,104 @@ ${brief.trim()}
   const _stage = memory?.relationship_stage || "Awareness";
   const _stageGuidance = getStageGuidance(_stage, callType);
   const stageBlock = `\n═══ CURRENT RELATIONSHIP STAGE: ${_stage.toUpperCase()} ═══\nStage rules for this conversation:\n${_stageGuidance}\n\nIMPORTANT: Do NOT restart discovery if scorecard already contains information. Continue from where the relationship left off. Reference known facts naturally rather than re-asking.\n`;
-  const fullSystem = `${VORTEX_PROFILE}\n${TRUTH_RULE}\n${systemPromptForCall}\n${memoryBlock}\n${stageBlock}\n${briefBlock}\n${layer1Summary}`;
+
+  // ═══ Quick Note Workflow State Engine — inject compiled state, not abstract rules ═══
+  let qnStateBlock = "";
+  if (callType === "quick_note") {
+    const _qnScorecard = memory?.intelligence_scorecard || {};
+    const _qn = computeQuickNoteState(_qnScorecard);
+    const f = _qn.flags;
+
+    // Detect supplier intent from latest supplier utterance
+    const _latestSupplierLine = (conversationHistory || []).slice().reverse().find(m => m.role === "user");
+    const _supplierIntent = detectSupplierIntent(_latestSupplierLine?.content || "");
+
+    // Count consecutive questions from assistant history (proxy for live session counter when no liveSession in scope)
+    const _historyTail = (conversationHistory || []).slice(-6);
+    let _consecutiveQs = 0;
+    for (let i = _historyTail.length - 1; i >= 0; i--) {
+      const m = _historyTail[i];
+      if (m.role === "assistant") {
+        if (/\?\s*$/.test((m.content || "").trim())) _consecutiveQs++;
+        else break;
+      }
+    }
+
+    const completedLines = [];
+    if (f.amazon_owner_known)      completedLines.push(`  \u2713 Amazon owner: ${_qnScorecard.amazon_presence?.amazon_manager || "(known)"}`);
+    if (f.observation_validated)   completedLines.push(`  \u2713 Observation validated: ${_qnScorecard.amazon_presence?.aware_of_amazon_presence ? "aware" : "not aware"}`);
+    if (f.satisfaction_known)      completedLines.push(`  \u2713 Satisfaction: ${_qnScorecard.concerns?.satisfaction_level || "(known)"}`);
+    if (f.primary_challenge_known) completedLines.push(`  \u2713 Primary challenge: ${_qnScorecard.concerns?.primary_amazon_challenge || "(known)"}`);
+    if (f.vortex_introduced)       completedLines.push(`  \u2713 Vortex model introduced`);
+    if (f.qualification_started)   completedLines.push(`  \u2713 Qualification started`);
+    if (f.moq_known)               completedLines.push(`  \u2713 MOQ known: ${_qnScorecard.commercial_terms?.moq}`);
+    if (f.decision_maker_known)    completedLines.push(`  \u2713 Decision maker known`);
+    if (f.next_step_known)         completedLines.push(`  \u2713 Next step known`);
+
+    const bannedLines = [];
+    if (f.amazon_owner_known)      bannedLines.push(`  \u2717 Who manages Amazon? (already answered)`);
+    if (f.observation_validated)   bannedLines.push(`  \u2717 Are these observations accurate? (already answered)`);
+    if (f.satisfaction_known)      bannedLines.push(`  \u2717 Are you satisfied with Amazon? (already answered)`);
+    if (f.primary_challenge_known) bannedLines.push(`  \u2717 What's your biggest Amazon challenge? (already answered)`);
+
+    let nextActionLine = "";
+    if (f.transition_required) {
+      nextActionLine = "\nTRANSITION REQUIRED: YES\nYour next response MUST:\n  \u2192 Introduce the Vortex model (use Discovery Completion Anchor)\n  \u2192 Explain the purchasing relationship\n  \u2192 Explain partnership approach\nDO NOT ask any discovery question this turn.\n";
+    } else if (f.discovery_complete && f.vortex_introduced && !f.qualification_started) {
+      nextActionLine = "\nNEXT ACTION: Begin Qualification — ask about account opening, MOQ, evaluation process, or partner criteria.\n";
+    } else if (f.qualification_started && !f.next_step_known) {
+      nextActionLine = "\nNEXT ACTION: Continue Qualification or move to Relationship Development (next step, decision timeline).\n";
+    } else if (!f.discovery_complete) {
+      const missing = [];
+      if (!f.amazon_owner_known)      missing.push("Amazon owner");
+      if (!f.observation_validated)   missing.push("observation validation");
+      if (!f.satisfaction_known)      missing.push("satisfaction");
+      if (!f.primary_challenge_known) missing.push("primary challenge");
+      nextActionLine = `\nNEXT ACTION: Continue Discovery. Still missing: ${missing.join(", ")}.\n`;
+    }
+
+    // Ratio enforcement message
+    let ratioLine = "";
+    if (_consecutiveQs >= 2) {
+      ratioLine = `\nQUESTION RATIO TRIPPED: You have asked ${_consecutiveQs} consecutive questions. Your NEXT response MUST be a STATEMENT (introduce Vortex, share observation, explain partnership, validate what supplier said). Asking another question is forbidden this turn.\n`;
+    }
+
+    // Supplier intent line
+    let intentLine = `\nSUPPLIER INTENT (latest message): ${_supplierIntent.toUpperCase()}\n`;
+    if (_supplierIntent === "clarification") {
+      intentLine += "  \u2192 Supplier asked you a question. ANSWER IT FIRST before asking a new question.\n";
+    } else if (_supplierIntent === "objection") {
+      intentLine += "  \u2192 Supplier raised an objection. ACKNOWLEDGE before continuing.\n";
+    } else if (_supplierIntent === "qualification") {
+      intentLine += "  \u2192 Supplier is qualifying you. Move to Stage 3 (Qualification) topics.\n";
+    } else if (_supplierIntent === "interest") {
+      intentLine += "  \u2192 Supplier shows interest. Capitalize \u2014 advance the conversation.\n";
+    }
+
+    qnStateBlock = `
+═══════════════════════════════════════════════════════════════
+CURRENT WORKFLOW STATE (COMPILED — TRUST THIS OVER MEMORY)
+═══════════════════════════════════════════════════════════════
+Stage: ${_qn.stage} \u2014 ${_qn.stageLabel}
+Discovery: ${f.discovery_complete ? "COMPLETE \u2705 (all 4 flags satisfied)" : "INCOMPLETE"}
+Vortex Introduced: ${f.vortex_introduced ? "YES" : "NO"}
+Qualification: ${f.qualification_started ? "STARTED" : "NOT STARTED"}
+Consecutive Questions: ${_consecutiveQs}${intentLine}
+COMPLETED FACTS (DO NOT RE-ASK):
+${completedLines.length ? completedLines.join("\n") : "  (none yet)"}
+
+${bannedLines.length ? `BANNED QUESTIONS THIS TURN:\n${bannedLines.join("\n")}\n` : ""}${nextActionLine}${ratioLine}
+\u26a0 Rule reminders:
+  \u2022 Never ask a question whose answer is in COMPLETED FACTS
+  \u2022 If TRANSITION REQUIRED = YES, asking ANY discovery question is forbidden
+  \u2022 If QUESTION RATIO TRIPPED, you must make a statement this turn
+  \u2022 If SUPPLIER INTENT = CLARIFICATION, answer their question first
+  \u2022 Stay in the indicated stage \u2014 do not regress to a lower stage
+═══════════════════════════════════════════════════════════════
+`;
+  }
+
+  const fullSystem = `${VORTEX_PROFILE}\n${TRUTH_RULE}\n${systemPromptForCall}\n${memoryBlock}\n${stageBlock}\n${qnStateBlock}\n${briefBlock}\n${layer1Summary}`;
   const recentHistory = (conversationHistory || []).slice(-6)
     .map(m => `${m.role === 'user' ? 'Sanaullah' : 'Supplier'}: ${m.content}`)
     .join('\n');
@@ -1264,6 +1361,8 @@ function getOrCreateLiveSession(sessionId, supplierId) {
     s = {
       supplier_id: supplierId,
       session_scorecard: {},
+      consecutive_questions: 0,
+      last_supplier_intent: "neutral",
       started_at: Date.now(),
       last_touched_at: Date.now(),
     };
@@ -1272,6 +1371,29 @@ function getOrCreateLiveSession(sessionId, supplierId) {
     s.last_touched_at = Date.now();
   }
   return s;
+}
+
+// ═══ Commit 3: Supplier intent detector (heuristic — no LLM call) ═══
+function detectSupplierIntent(latestSupplierUtterance) {
+  if (!latestSupplierUtterance || typeof latestSupplierUtterance !== "string") return "neutral";
+  const t = latestSupplierUtterance.toLowerCase().trim();
+  // Clarification = the supplier is asking a question back
+  if (/\?$/.test(t) || /^(what|who|how|why|when|where|which|can you|could you|are you|do you|is this|tell me)/.test(t)) {
+    return "clarification";
+  }
+  // Objection signals
+  if (/(not interested|don'?t need|already have|too expensive|we have a|we work with|we already|no thanks|pass on this|not a fit|not right now)/.test(t)) {
+    return "objection";
+  }
+  // Qualification signals
+  if (/(moq|net 30|net 60|approval|reseller certificate|wholesale agreement|credit application|account opening|onboarding|documentation|application form|terms)/.test(t)) {
+    return "qualification";
+  }
+  // Interest signals
+  if (/(tell me more|interested|sounds good|that makes sense|let'?s talk|i'?m open to|would love to|would be great|happy to|definitely|absolutely)/.test(t)) {
+    return "interest";
+  }
+  return "neutral";
 }
 
 function mergeDeltaIntoSession(session, delta) {
@@ -1312,9 +1434,59 @@ const ALLOWED_FIELDS = {
   amazon_presence: ["aware_of_amazon_presence", "amazon_managed", "amazon_manager", "seller_visibility", "seller_count_known", "brand_registry_status", "listing_control", "map_policy_status"],
   // Brand Registry specialized intelligence categories
   stakeholders: ["marketing_contact", "sales_contact", "operations_contact", "ownership_contact", "primary_decision_maker"],
-  concerns: ["distributor_conflict", "brand_representation", "pricing_control", "marketplace_visibility", "internal_resource_concerns"],
-  evaluation_process: ["approval_path", "decision_process", "leadership_criteria", "evaluation_timeline", "success_metrics"],
+  concerns: ["distributor_conflict", "brand_representation", "pricing_control", "marketplace_visibility", "internal_resource_concerns", "satisfaction_level", "primary_amazon_challenge"],
+  evaluation_process: ["approval_path", "decision_process", "leadership_criteria", "evaluation_timeline", "success_metrics", "discovery_complete", "vortex_model_introduced", "primary_path", "stage", "discovery_question_count", "next_step"],
 };
+
+// ═══ Quick Note Workflow State Engine (Layer 1) ═══
+// Computes 10 binary flags + derived state from an effective scorecard.
+// No new DB columns — all flags derived from existing scorecard JSONB.
+function computeQuickNoteState(scorecard) {
+  const sc = scorecard || {};
+  const ap = sc.amazon_presence || {};
+  const co = sc.concerns || {};
+  const sh = sc.stakeholders || {};
+  const cr = sc.commercial_terms || {};
+  const ar = sc.account_requirements || {};
+  const ep = sc.evaluation_process || {};
+
+  const flags = {
+    amazon_owner_known:       !!(ap.amazon_manager),
+    observation_validated:    (ap.aware_of_amazon_presence !== undefined && ap.aware_of_amazon_presence !== null),
+    satisfaction_known:       !!(co.satisfaction_level),
+    primary_challenge_known:  !!(co.primary_amazon_challenge),
+    vortex_introduced:        !!(ep.vortex_model_introduced),
+    qualification_started:    !!(cr.moq || ar.reseller_certificate_required || ar.wholesale_agreement_required || cr.approval_timeline),
+    account_process_known:    !!(cr.approval_timeline || ar.credit_application_required || ar.wholesale_agreement_required),
+    moq_known:                !!(cr.moq),
+    decision_maker_known:     !!(sh.primary_decision_maker || sh.ownership_contact),
+    next_step_known:          !!(ep.next_step),
+  };
+
+  flags.discovery_complete = flags.amazon_owner_known
+                          && flags.observation_validated
+                          && flags.satisfaction_known
+                          && flags.primary_challenge_known;
+
+  flags.transition_required = flags.discovery_complete && !flags.vortex_introduced;
+
+  let stage = 1;
+  if (flags.discovery_complete && !flags.vortex_introduced) stage = 1.5;  // transition pending
+  if (flags.vortex_introduced) stage = 2;
+  if (flags.qualification_started) stage = 3;
+  if (flags.next_step_known) stage = 4;
+
+  const stageLabel = ({
+    1: "Discovery",
+    1.5: "Transition Required",
+    2: "Vortex Introduction",
+    3: "Qualification",
+    4: "Relationship Development"
+  })[stage] || "Discovery";
+
+  return { flags, stage, stageLabel };
+}
+
 
 const extractMissingInfo = (memory, transcript, callType) => {
   const missing = [];
@@ -2534,6 +2706,17 @@ app.post("/api/analyze-live", async (req, res) => {
           }
         } else if (typeof coachResponse === "string") {
           coachResponseText = coachResponse;
+        }
+
+        // ═══ Commit 3: Consecutive question counter (QN only) ═══
+        if (liveSession && effectiveCallType === "quick_note" && coachResponseText) {
+          const endsWithQuestion = /\?\s*$/.test(String(coachResponseText).trim());
+          if (endsWithQuestion) {
+            liveSession.consecutive_questions = (liveSession.consecutive_questions || 0) + 1;
+          } else {
+            liveSession.consecutive_questions = 0;
+          }
+          console.log(`[QN] session ${sessionId} consecutive_questions=${liveSession.consecutive_questions}`);
         }
       if (coachResponse) {
         response.suggested_response = coachResponse;
