@@ -1063,7 +1063,7 @@ scorecard_delta rules:
     const resp = await Promise.race([
       client.messages.create({
         model: 'claude-haiku-4-5',
-        max_tokens: 600,
+        max_tokens: 400,
         system: fullSystem,
         messages: [{ role: 'user', content: userMessage }],
       }),
