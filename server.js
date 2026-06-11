@@ -774,7 +774,7 @@ ${restrictions}
 LAST CALL: ${memory.last_call_summary || '(No prior calls)'}`;
 };
 
-const generateCoachResponse = async ({ callType, memory, transcript, conversationHistory, layer1Context, brief, onDelta }) => {
+const generateCoachResponse = async ({ callType, memory, transcript, conversationHistory, layer1Context, brief, onDelta, liveSession }) => {
   if (!CLAUDE_COACHING_ENABLED) return null;
   const systemPromptForCall = COACHING_SYSTEM_PROMPTS[callType];
   if (!systemPromptForCall) return null;
@@ -818,7 +818,10 @@ ${brief.trim()}
   // ═══ Quick Note Workflow State Engine — inject compiled state, not abstract rules ═══
   let qnStateBlock = "";
   if (callType === "quick_note") {
-    const _qnScorecard = memory?.intelligence_scorecard || {};
+    const _qnScorecard = mergeScorecardForLive(
+      memory?.intelligence_scorecard || {},
+      (liveSession && liveSession.session_scorecard) || {}
+    );
     const _qn = computeQuickNoteState(_qnScorecard);
     const f = _qn.flags;
 
@@ -2686,6 +2689,7 @@ app.post("/api/analyze-live", async (req, res) => {
         layer1Context,
         brief: req.body.brief,
         onDelta,
+        liveSession,
       });
         // ═══ Architecture C: extract suggestion text + merge scorecard delta into live session ═══
         let coachResponseText = null;
