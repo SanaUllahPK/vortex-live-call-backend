@@ -4796,7 +4796,7 @@ app.post("/api/coach/threads/:id/messages", async (req, res) => {
     // ═══ LIVE CALL MODE: brevity + say-now focus ═══
     const isLive = req.body.live === true;
     if (isLive) {
-      systemPrompt += `\n\n═══ LIVE CALL MODE (overrides length guidance) ═══\nSanaullah is ON A LIVE CALL right now. The supplier just spoke. Respond with EXACTLY what Sanaullah should say next — 1-3 sentences, natural spoken language, ready to say out loud. No analysis, no explanation, no options, no email drafts. Just the words to say. If something critical must be flagged, add ONE short line starting with "⚠" after the response.`;
+      systemPrompt += `\n\n═══ LIVE CALL MODE ═══\nSanaullah is ON A LIVE CALL right now. The supplier just spoke.\nALL of your coaching doctrine above applies FULLY — discovery before positioning, follow the supplier's last statement, pull the thread, never manufacture pain, never pitch early, minimum complete answers, truth rule. Live mode changes ONLY the output format, never the judgment.\nApply your reasoning silently, then output: the exact words Sanaullah should say next (1-3 sentences, natural spoken language). The words must be what your doctrine would choose — usually a discovery question that follows their statement, an acknowledgment that opens them up, or a minimum complete answer to a direct question.\nIf something critical must be flagged, add ONE short line starting with "⚠" after the words.`;
     }
 
     // ═══ SSE streaming opt-in ═══
@@ -4817,12 +4817,12 @@ app.post("/api/coach/threads/:id/messages", async (req, res) => {
       if (isLive && streamMessages.length) {
         const last = streamMessages[streamMessages.length - 1];
         if (last.role === "user") {
-          last.content = `[LIVE CALL — supplier just said:] "${last.content}"\n\nGive me ONLY the words to say back. 1-3 spoken sentences. No headers, no bold, no analysis, no lists, no email format. Ignore the format of earlier messages in this thread. Just speakable words.`;
+          last.content = `[LIVE CALL — supplier just said:] "${last.content}"\n\nApplying your full coaching doctrine (discovery first, follow their statement, never pitch early): give me the words to say back. 1-3 spoken sentences, plain text, no headers or lists. Choose the move your doctrine recommends — usually deepening discovery on what they just said.`;
         }
       }
       const stream = client.messages.stream({
         model: "claude-sonnet-4-5",
-        max_tokens: isLive ? 200 : 1500,
+        max_tokens: isLive ? 250 : 1500,
         system: systemPrompt,
         messages: streamMessages,
       });
