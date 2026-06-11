@@ -851,27 +851,9 @@ ${brief.trim()}
     if (f.decision_maker_known)    completedLines.push(`  \u2713 Decision maker known`);
     if (f.next_step_known)         completedLines.push(`  \u2713 Next step known`);
 
-    const bannedLines = [];
-    if (f.amazon_owner_known)      bannedLines.push(`  \u2717 Who manages Amazon? (already answered)`);
-    if (f.observation_validated)   bannedLines.push(`  \u2717 Are these observations accurate? (already answered)`);
-    if (f.satisfaction_known)      bannedLines.push(`  \u2717 Are you satisfied with Amazon? (already answered)`);
-    if (f.primary_challenge_known) bannedLines.push(`  \u2717 What's your biggest Amazon challenge? (already answered)`);
-
-    // ═══ CLOSED INTELLIGENCE LOCK — qualification fields ═══
-    const _cr = _qnScorecard.commercial_terms || {};
-    const _ar = _qnScorecard.account_requirements || {};
-    const _sh2 = _qnScorecard.stakeholders || {};
-    const _ep2 = _qnScorecard.evaluation_process || {};
-    if (_cr.approval_timeline)  bannedLines.push(`  \u2717 How long does approval take? (LOCKED: ${_cr.approval_timeline})`);
-    if (_cr.moq)                bannedLines.push(`  \u2717 What are your MOQ requirements? (LOCKED: ${_cr.moq})`);
-    if (_cr.payment_terms)      bannedLines.push(`  \u2717 What payment terms do you require? (LOCKED: ${_cr.payment_terms})`);
-    if (_cr.net_terms)          bannedLines.push(`  \u2717 What net terms do you offer? (LOCKED: ${_cr.net_terms})`);
-    if (_ar.authorized_reseller_policy) bannedLines.push(`  \u2717 Do you have an authorized reseller policy? (LOCKED)`);
-    if (_ar.reseller_certificate_required !== undefined || _ar.ein_required !== undefined || _ar.credit_application_required !== undefined || _ar.wholesale_agreement_required !== undefined) {
-      bannedLines.push(`  \u2717 What documentation is required? (LOCKED: docs already specified)`);
-    }
-    if (_sh2.primary_decision_maker) bannedLines.push(`  \u2717 Who makes the final decision? (LOCKED: ${_sh2.primary_decision_maker})`);
-    if (_ep2.next_step)         bannedLines.push(`  \u2717 What should the next step be? (LOCKED: ${_ep2.next_step})`);
+    // ═══ SINGLE SOURCE OF TRUTH: locks drive both this banned list and the sidebar ═══
+    const _locks = computeQuickNoteLocks(_qnScorecard);
+    const bannedLines = _locks.map(l => `  \u2717 ${l.banned} (LOCKED: ${l.value})`);
 
     let nextActionLine = "";
     if (f.transition_required) {
@@ -1465,6 +1447,119 @@ function computeQuickNoteState(scorecard) {
 
   return { flags, stage, stageLabel };
 }
+
+// ═══ SINGLE SOURCE OF TRUTH: locked intelligence (feeds BOTH prompt bans AND sidebar) ═══
+function computeQuickNoteLocks(scorecard) {
+  const sc = scorecard || {};
+  const ap = sc.amazon_presence || {};
+  const co = sc.concerns || {};
+  const sh = sc.stakeholders || {};
+  const cr = sc.commercial_terms || {};
+  const ar = sc.account_requirements || {};
+  const ep = sc.evaluation_process || {};
+  const locks = [];
+  if (ap.amazon_manager)        locks.push({ key: "amazon_owner", label: "Amazon Owner", value: String(ap.amazon_manager), banned: "Who manages Amazon?" });
+  if (ap.aware_of_amazon_presence !== undefined && ap.aware_of_amazon_presence !== null)
+                                locks.push({ key: "observation", label: "Observation Validated", value: ap.aware_of_amazon_presence ? "Aware" : "Not aware", banned: "Are these observations accurate?" });
+  if (co.satisfaction_level)    locks.push({ key: "satisfaction", label: "Satisfaction", value: String(co.satisfaction_level), banned: "Are you satisfied with Amazon?" });
+  if (co.primary_amazon_challenge) locks.push({ key: "challenge", label: "Primary Challenge", value: String(co.primary_amazon_challenge), banned: "What's your biggest Amazon challenge?" });
+  if (cr.approval_timeline)     locks.push({ key: "approval", label: "Approval Timeline", value: String(cr.approval_timeline), banned: "How long does approval take?" });
+  if (cr.moq)                   locks.push({ key: "moq", label: "MOQ", value: String(cr.moq), banned: "What are your MOQ requirements?" });
+  if (cr.payment_terms)         locks.push({ key: "payment", label: "Payment Terms", value: String(cr.payment_terms), banned: "What payment terms do you require?" });
+  if (cr.net_terms)             locks.push({ key: "net_terms", label: "Net Terms", value: String(cr.net_terms), banned: "What net terms do you offer?" });
+  if (cr.freight_terms)         locks.push({ key: "freight", label: "Freight Terms", value: String(cr.freight_terms), banned: "What are your freight terms?" });
+  if (ar.authorized_reseller_policy) locks.push({ key: "reseller_policy", label: "Reseller Policy", value: String(ar.authorized_reseller_policy), banned: "Do you have an authorized reseller policy?" });
+  const docsKnown = [ar.reseller_certificate_required, ar.ein_required, ar.credit_application_required, ar.wholesale_agreement_required].some(v => v !== undefined && v !== null);
+  if (docsKnown)                locks.push({ key: "docs", label: "Documentation", value: "Requirements specified", banned: "What documentation is required?" });
+  if (sh.primary_decision_maker) locks.push({ key: "dm", label: "Decision Maker", value: String(sh.primary_decision_maker), banned: "Who makes the final decision?" });
+  if (ep.next_step)             locks.push({ key: "next_step", label: "Next Step", value: String(ep.next_step), banned: "What should the next step be?" });
+  return locks;
+}
+
+// ═══ ONE next best move via priority cascade ═══
+function computeNextBestMove(flags, scorecard) {
+  const cr = (scorecard || {}).commercial_terms || {};
+  const sh = (scorecard || {}).stakeholders || {};
+  const ep = (scorecard || {}).evaluation_process || {};
+  if (!flags.observation_validated)   return "Validate Observation";
+  if (!flags.amazon_owner_known)      return "Learn Amazon Ownership";
+  if (!flags.satisfaction_known)      return "Learn Satisfaction";
+  if (!flags.primary_challenge_known) return "Learn Primary Challenge";
+  if (!flags.vortex_introduced)       return "Introduce Vortex Model";
+  if (!cr.approval_timeline)          return "Learn Approval Process";
+  if (!cr.moq)                        return "Learn MOQ";
+  if (!cr.payment_terms)              return "Learn Payment Terms";
+  if (!sh.primary_decision_maker)     return "Identify Decision Maker";
+  if (!ep.next_step)                  return "Secure Next Step";
+  return "Wrap Up Call";
+}
+
+// ═══ Open intelligence: top 3 unresolved by priority ═══
+function computeOpenIntelligence(flags, scorecard) {
+  const cr = (scorecard || {}).commercial_terms || {};
+  const sh = (scorecard || {}).stakeholders || {};
+  const ar = (scorecard || {}).account_requirements || {};
+  const ep = (scorecard || {}).evaluation_process || {};
+  const open = [];
+  if (flags.vortex_introduced) {
+    if (!cr.approval_timeline) open.push("Approval Process");
+    if (!cr.moq) open.push("MOQ");
+    if (!cr.payment_terms) open.push("Payment Terms");
+    if (!ar.authorized_reseller_policy) open.push("Reseller Policy");
+    if (!cr.freight_terms) open.push("Freight Terms");
+    if (!sh.primary_decision_maker) open.push("Decision Maker");
+    if (!ep.next_step) open.push("Next Step");
+  } else {
+    if (!flags.observation_validated) open.push("Observation Validation");
+    if (!flags.amazon_owner_known) open.push("Amazon Owner");
+    if (!flags.satisfaction_known) open.push("Satisfaction");
+    if (!flags.primary_challenge_known) open.push("Primary Challenge");
+  }
+  return open.slice(0, 3);
+}
+
+// ═══ Partnership signal: rule-based v1, 0-10 ═══
+function computePartnershipSignal(scorecard, supplierIntent, conversationHistory) {
+  const sc = scorecard || {};
+  const co = sc.concerns || {};
+  const cr = sc.commercial_terms || {};
+  const ep = sc.evaluation_process || {};
+  let score = 5.0;
+  const positive = [];
+  const negative = [];
+  if (supplierIntent === "interest") { score += 1.5; positive.push("Showing interest"); }
+  if (supplierIntent === "qualification") { score += 1.5; positive.push("Qualifying us as a partner"); }
+  if (supplierIntent === "objection") { score -= 1.5; negative.push("Raised objection"); }
+  if (cr.moq || cr.payment_terms || cr.approval_timeline) { score += 1.0; positive.push("Sharing commercial details"); }
+  if (ep.next_step) { score += 1.0; positive.push("Next step agreed"); }
+  if (co.satisfaction_level && /not|low|unhappy|dissatisf/i.test(String(co.satisfaction_level))) { score += 0.5; positive.push("Open to improvement"); }
+  if (co.primary_amazon_challenge && /priority|not import|low/i.test(String(co.primary_amazon_challenge))) { score -= 1.0; negative.push("Amazon low priority"); }
+  const supplierTurns = (conversationHistory || []).filter(m => m.role === "user");
+  const lastFew = supplierTurns.slice(-3);
+  if (lastFew.length >= 2 && lastFew.every(m => (m.content || "").split(" ").length < 8)) { score -= 1.0; negative.push("Short, guarded answers"); }
+  score = Math.max(0, Math.min(10, score));
+  return { score: Math.round(score * 10) / 10, positive: positive.slice(0, 3), negative: negative.slice(0, 3) };
+}
+
+// ═══ Risk & coaching: rule-based v1 ═══
+function computeRiskCoaching(scorecard, supplierIntent, conversationHistory) {
+  const sc = scorecard || {};
+  const ap = sc.amazon_presence || {};
+  const supplierTurns = (conversationHistory || []).filter(m => m.role === "user");
+  const lastFew = supplierTurns.slice(-3);
+  const guarded = lastFew.length >= 2 && lastFew.every(m => (m.content || "").split(" ").length < 8);
+  if (ap.amazon_manager && /agency|firm|partner|external/i.test(String(ap.amazon_manager))) {
+    return { risk: "Agency Present", coaching: ["Differentiate wholesale model", "Do not compete with agency", "Emphasize inventory investment"] };
+  }
+  if (supplierIntent === "objection") {
+    return { risk: "Active Objection", coaching: ["Handle ONLY this objection", "Do not sell or qualify now", "Acknowledge before continuing"] };
+  }
+  if (guarded) {
+    return { risk: "Guarded Supplier", coaching: ["Build trust first", "Slow qualification", "Avoid rapid-fire questions"] };
+  }
+  return { risk: null, coaching: [] };
+}
+
 
 
 const extractMissingInfo = (memory, transcript, callType) => {
@@ -2718,6 +2813,40 @@ app.post("/api/analyze-live", async (req, res) => {
         response.response_source = 'claude_layer2';
       } else {
         response.response_source = 'layer1_fallback';
+      }
+
+      // ═══ Quick Note sidebar state (Commit A) ═══
+      if (effectiveCallType === "quick_note") {
+        try {
+          const _sbScorecard = mergeScorecardForLive(
+            memory?.intelligence_scorecard || {},
+            (liveSession && liveSession.session_scorecard) || {}
+          );
+          const _sbState = computeQuickNoteState(_sbScorecard);
+          const _sbLocks = computeQuickNoteLocks(_sbScorecard);
+          const _sbLatest = (conversationHistory || []).slice().reverse().find(m => m.role === "user");
+          const _sbIntent = detectSupplierIntent(_sbLatest?.content || "");
+          response.qn_state = {
+            stage: _sbState.stage,
+            stage_label: _sbState.stageLabel,
+            discovery_score: {
+              amazon_owner: _sbState.flags.amazon_owner_known,
+              observation_validated: _sbState.flags.observation_validated,
+              satisfaction: _sbState.flags.satisfaction_known,
+              primary_challenge: _sbState.flags.primary_challenge_known,
+              complete: _sbState.flags.discovery_complete,
+            },
+            next_best_move: computeNextBestMove(_sbState.flags, _sbScorecard),
+            locked: _sbLocks.map(l => ({ label: l.label, value: l.value })),
+            open: computeOpenIntelligence(_sbState.flags, _sbScorecard),
+            partnership_signal: computePartnershipSignal(_sbScorecard, _sbIntent, conversationHistory),
+            risk_coaching: computeRiskCoaching(_sbScorecard, _sbIntent, conversationHistory),
+            call_coach: {
+              do: [computeNextBestMove(_sbState.flags, _sbScorecard)],
+              avoid: _sbLocks.slice(0, 4).map(l => `Re-asking ${l.label}`),
+            },
+          };
+        } catch (e) { console.error("[qn_state] build error:", e.message); }
       }
     } catch (e) {
       console.error('[Layer 2] wrapper error:', e.message);
