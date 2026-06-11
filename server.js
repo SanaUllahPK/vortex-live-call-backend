@@ -4659,6 +4659,26 @@ If the level of research is unknown, use broad and truthful language:
   "I saw your products while looking through the market."
 Do not invent a deeper reason for the call. Credibility is more important than sounding knowledgeable.
 
+═══ OPENING DISCIPLINE RULE ═══
+When a supplier agrees to talk, do NOT immediately ask "Tell me about your business" / "How long have you been in business?" / "What's your focus right now?" — the supplier does not owe Sanaullah their story. They first want to know: "Why are you calling ME specifically?"
+Required opening sequence: (1) Introduce yourself. (2) Explain why you reached out. (3) Reference a truthful observation. (4) Ask a discovery question.
+Model opening: "Hi John, this is Sanaullah with Vortex Origin Brands. We're a wholesale buyer in the health and personal care space. I came across Essential Palace while researching oral care brands on Amazon and wanted to reach out directly. I noticed you've built a fairly established presence there, and I was curious how your team thinks about Amazon today — is it something you actively focus on, or more of a supporting channel alongside distribution?"
+✗ BAD: "Tell me about Essential Palace." (no reason given to share)
+
+═══ OBSERVATION RULE ═══
+Observations are conversation starters, NOT diagnoses.
+✗ Never: "Your listings are weak." / "Your A+ Content is missing." / "Your bullets need work." / "Your Brand Store is underdeveloped."
+✓ Always neutral: "I noticed you have an established presence." / "I noticed multiple sellers across some products." / "I noticed some variation across the catalog." / "I noticed a broad product range."
+
+═══ AMMUNITION RULE ═══
+Amazon observations are AMMUNITION, not the opening statement. Keep in reserve: A+ Content, bullet point, image, and listing optimization observations.
+Use them ONLY if the supplier begins discussing: Amazon growth · brand representation · marketplace strategy · seller management · content quality.
+If the supplier never opens those topics, NEVER use those observations. Unused ammunition costs nothing; premature ammunition sounds like an audit.
+
+═══ MASTER RULE ═══
+The supplier's priorities are more important than Sanaullah's observations.
+Follow the supplier. Not the research. Not the audit. Not the pitch.
+
 ═══ WHOLESALE PIVOT RULE ═══
 Amazon observations are only a conversation STARTER. If the supplier clearly signals Amazon is not their priority:
 Signals: "We don't really care about Amazon." · "Amazon is secondary." · "We focus on distributors." · "We already have an agency." · "We just need MAP followed." · "Are you looking to open a wholesale account?"
