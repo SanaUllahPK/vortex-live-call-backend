@@ -774,10 +774,283 @@ ${restrictions}
 LAST CALL: ${memory.last_call_summary || '(No prior calls)'}`;
 };
 
+// ═══ FIX 1: Dedicated live extraction — runs PARALLEL to suggestion, authoritative for state ═══
+const LIVE_EXTRACT_SYSTEM = `You are an intelligence extraction engine for live sales calls. You do NOT generate conversation. You ONLY extract structured facts from the supplier's latest statement.
+
+TOPIC-STATE MODEL — each topic is one of:
+  "unknown"  — supplier said nothing about it
+  "partial"  — supplier touched on it but did not answer the core question
+  "complete" — supplier ANSWERED the core question (even without itemizing every sub-detail)
+
+CRITICAL RULE: If the supplier answered the question, the topic is COMPLETE.
+Example: "We require a reseller application and business documentation" → documentation = COMPLETE (they answered what docs are needed). Do NOT keep it partial just because credit-application or wholesale-agreement specifics weren't itemized.
+
+Output ONE JSON object and NOTHING else. No fences. No explanation before or after. Your entire output must start with { and end with }. Format:
+{
+  "topics": {
+    "amazon_owner":      { "state": "unknown|partial|complete", "value": "..." },
+    "observation":       { "state": "...", "value": "aware|not_aware|..." },
+    "satisfaction":      { "state": "...", "value": "..." },
+    "primary_challenge": { "state": "...", "value": "..." },
+    "approval_process":  { "state": "...", "value": "..." },
+    "documentation":     { "state": "...", "value": "..." },
+    "moq":               { "state": "...", "value": "..." },
+    "payment_terms":     { "state": "...", "value": "..." },
+    "decision_maker":    { "state": "...", "value": "..." },
+    "next_step":         { "state": "...", "value": "..." },
+    "reseller_policy":   { "state": "...", "value": "..." }
+  },
+  "scorecard_delta": {
+    "amazon_presence": {}, "concerns": {}, "stakeholders": {},
+    "commercial_terms": {}, "account_requirements": {}, "evaluation_process": {}
+  }
+}
+
+Rules:
+- Include ONLY topics the supplier's LATEST message touched. Omit unknown topics entirely.
+- scorecard_delta uses canonical field names: amazon_manager, aware_of_amazon_presence, satisfaction_level, primary_amazon_challenge, approval_timeline, moq, payment_terms, net_terms, freight_terms, primary_decision_maker, next_step, authorized_reseller_policy, reseller_certificate_required, ein_required, credit_application_required, wholesale_agreement_required.
+- Store readable strings ("$2,500", "2 weeks"). Booleans true/false.
+- Extract ONLY from the supplier's latest message, not prior turns.`;
+
+// ═══ FIX 2: Objective-scoped prompting — state engine decides WHAT, Claude renders HOW ═══
+const QN_CORE_IDENTITY = `You are an experienced business development rep for Vortex Origin Brands on a LIVE sales call. Quick Note workflow: Amazon observations start the conversation; wholesale relationships are the objective.
+
+IDENTITY: Vortex purchases inventory directly, invests its own capital, builds long-term marketplace relationships. NEVER position as PPC agency, listing agency, or Amazon consultant. Capabilities (PPC, A+ Content, Brand Store, marketplace execution) are supporting functions of the wholesale relationship — mention only in that frame.
+
+STYLE: Sound like a business owner, not an interviewer. Short sentences. ONE question max per response. Under 3 sentences typical. Hedge observations ("I noticed...", "It appeared..."). Acceptable openers: Understood / That makes sense / Got it / Helpful to know. NEVER: Perfect / Great / Awesome / Amazing. Never invent observations not in the brief. Never state observations as facts. Never discuss exclusivity.
+
+OUTPUT FORMAT (strict JSON, no fences):
+{"suggestion": "Natural conversational response. Plain text, no quotation marks."}`;
+
+const QN_OBJECTIVE_BRIEFS = {
+  "Re-engage Follow-Up": `YOUR ONLY OBJECTIVE THIS TURN: This is a FOLLOW-UP call with a supplier you have spoken to before. Do NOT re-introduce Vortex from scratch. Do NOT restart discovery.
+Greet naturally as a returning contact: reference that you spoke previously, briefly anchor on what was discussed (use the ALREADY KNOWN list), and continue the relationship from where it left off.
+Pattern: "Hi [name], Sanaullah from Vortex Origin Brands — we spoke previously about [known topic]. Wanted to follow up on [the next open item]."
+Keep it warm, brief, and forward-moving.`,
+
+  "Validate Observation": `YOUR ONLY OBJECTIVE THIS TURN: Open the conversation and validate the observation from the call brief.
+Reveal the SPECIFIC observation (never vague "a few things"), hedged, then ask whether it matches what they see.
+Pattern: "While reviewing [brand] on Amazon, I noticed [specific observation from brief]. Is that something your team is aware of?"
+The validation question MUST flow logically from the observation itself.`,
+
+  "Learn Amazon Ownership": `YOUR ONLY OBJECTIVE THIS TURN: Learn who manages/owns Amazon decisions.
+One natural question. Example: "Who typically handles Amazon or marketplace decisions on your side?"
+If they just shared other info, acknowledge briefly first ("That's helpful."), then ask.`,
+
+  "Learn Satisfaction": `YOUR ONLY OBJECTIVE THIS TURN: Learn whether they are satisfied with current Amazon performance.
+One natural question. Example: "How do you feel about how the channel is performing right now?"
+Acknowledge their previous answer briefly first.`,
+
+  "Learn Primary Challenge": `YOUR ONLY OBJECTIVE THIS TURN: Learn their PRIMARY Amazon challenge (one, not all).
+Example: "What would you say is the main gap on Amazon right now?"
+Do NOT diagnose. Do NOT explore multiple issues. One challenge, then done.`,
+
+  "Introduce Vortex Model": `YOUR ONLY OBJECTIVE THIS TURN: Introduce the Vortex model. DO NOT ask any discovery question.
+Use Sanaullah's positioning (adapt naturally, keep this exact spirit and order):
+"The reason I ask — I run Vortex Origin Brands, a wholesale-focused Amazon partner. We purchase inventory directly from brands and help maintain an organized, consistent presence on Amazon: improving listings, supporting brand protection, and investing in advertising using our own capital. Some partners prefer that we manage the channel fully, while others work with us alongside a small group of approved sellers — we adapt to what aligns best with the brand's long-term strategy. And we're prepared to meet your standard MOQs and establish a direct purchasing relationship."
+Confident, capabilities included, wholesale relationship as the anchor. End with ONE forward question toward account opening, e.g. "What's the best way to start the process of opening an account with [brand]?"`,
+
+  "Learn Approval Process": `YOUR ONLY OBJECTIVE THIS TURN: Learn their partner approval/review process.
+ONE question only. Example: "How does your team typically evaluate new wholesale partners?"
+Do NOT also ask about documentation, MOQ, or terms — those come later.`,
+
+  "Learn MOQ": `YOUR ONLY OBJECTIVE THIS TURN: Learn their MOQ requirements.
+ONE question only. Example: "What MOQ requirements should we be aware of?"
+Brief acknowledgment first if they just shared something. Do NOT bundle with payment terms or documentation.`,
+
+  "Learn Payment Terms": `YOUR ONLY OBJECTIVE THIS TURN: Learn payment terms for new partners.
+ONE question only. Example: "What payment terms do new partners typically start with?"
+Do NOT bundle with other commercial questions.`,
+
+  "Identify Decision Maker": `YOUR ONLY OBJECTIVE THIS TURN: Learn who makes the final decision on new wholesale accounts.
+ONE question only. Example: "Who would typically give the final go-ahead on a new wholesale account?"`,
+
+  "Secure Next Step": `YOUR ONLY OBJECTIVE THIS TURN: Secure a concrete next step.
+Propose ONE specific action: sending company information, scheduling a follow-up, starting the application.
+Example: "What makes sense as a next step — should I send over our company information and reseller documentation to get the review started?"`,
+
+  "Wrap Up Call": `YOUR ONLY OBJECTIVE THIS TURN: Wrap up warmly and confirm the agreed next step.
+Thank them, restate the next step in one sentence, close professionally. No new questions.`,
+
+  "Handle Objection": `YOUR ONLY OBJECTIVE THIS TURN: Handle the supplier's objection. ONE objection, ONE response.
+Do NOT sell, qualify, or discover simultaneously.
+"We already have an agency" → differentiate: Vortex purchases inventory and invests capital; not competing with their agency. STOP.
+"Not accepting new partners" → acknowledge, ask if temporary or permanent, seek permission for future follow-up. STOP.`,
+
+  "Answer Their Question": `YOUR ONLY OBJECTIVE THIS TURN: The supplier asked a direct question. ANSWER IT COMPLETELY first.
+Be direct and honest. If they ask "are you trying to open an account?" — "Ultimately, yes. We're determining whether there's a fit for a direct wholesale purchasing relationship."
+After a complete answer you MAY add one soft follow-up, but the answer comes first.`,
+};
+
+// Derive topic states from a persisted scorecard (for suppliers without saved qn_topic_states)
+function deriveTopicStatesFromScorecard(scorecard) {
+  const sc = scorecard || {};
+  const ap = sc.amazon_presence || {};
+  const co = sc.concerns || {};
+  const sh = sc.stakeholders || {};
+  const cr = sc.commercial_terms || {};
+  const ar = sc.account_requirements || {};
+  const ep = sc.evaluation_process || {};
+  const out = {};
+  const set = (k, v) => { if (v !== undefined && v !== null && v !== "") out[k] = { state: "complete", value: String(v) }; };
+  set("amazon_owner", ap.amazon_manager);
+  if (ap.aware_of_amazon_presence !== undefined && ap.aware_of_amazon_presence !== null) set("observation", ap.aware_of_amazon_presence ? "aware" : "not_aware");
+  set("satisfaction", co.satisfaction_level);
+  set("primary_challenge", co.primary_amazon_challenge);
+  set("approval_process", cr.approval_timeline);
+  set("moq", cr.moq);
+  set("payment_terms", cr.payment_terms);
+  set("decision_maker", sh.primary_decision_maker);
+  set("next_step", ep.next_step);
+  set("reseller_policy", ar.authorized_reseller_policy);
+  const docsKnown = [ar.reseller_certificate_required, ar.ein_required, ar.credit_application_required, ar.wholesale_agreement_required].some(v => v !== undefined && v !== null);
+  if (docsKnown) out["documentation"] = { state: "complete", value: "requirements specified" };
+  if (ep.vortex_model_introduced) out["vortex_introduced"] = { state: "complete", value: "previously introduced" };
+  return out;
+}
+
+// Seed a live session's topic states from supplier's persisted memory (cross-call continuity)
+function seedSessionTopicStates(session, supplier) {
+  if (!session || session.topic_states_seeded) return;
+  session.topic_states_seeded = true;
+  if (!session.topic_states) session.topic_states = {};
+  const persisted = (supplier && supplier.qn_topic_states) || {};
+  const derived = deriveTopicStatesFromScorecard(supplier && supplier.intelligence_scorecard);
+  // persisted explicit states win over derived
+  mergeTopicStates(session, derived);
+  mergeTopicStates(session, persisted);
+  const known = Object.entries(session.topic_states).filter(([,v]) => v.state === "complete").map(([k]) => k);
+  if (known.length) console.log(`[crosscall] seeded session with prior intelligence: ${known.join(", ")}`);
+}
+
+// Resolve objective: intent overrides > topic-state cascade
+function resolveQNObjective(topicStates, supplierIntent, scorecard) {
+  const ts = topicStates || {};
+  const done = (k) => ts[k] && ts[k].state === "complete";
+  if (supplierIntent === "clarification") return "Answer Their Question";
+  if (supplierIntent === "objection")     return "Handle Objection";
+  // Follow-up call detection: if substantive prior intelligence exists and this is the first turn, re-engage
+  const knownCount = Object.values(ts).filter(v => v.state === "complete").length;
+  if (knownCount >= 2 && !ts.__reengaged) {
+    ts.__reengaged = { state: "complete", value: "yes" };
+    return "Re-engage Follow-Up";
+  }
+  if (!done("observation"))        return "Validate Observation";
+  if (!done("amazon_owner"))       return "Learn Amazon Ownership";
+  if (!done("satisfaction"))       return "Learn Satisfaction";
+  if (!done("primary_challenge"))  return "Learn Primary Challenge";
+  const ep = (scorecard || {}).evaluation_process || {};
+  const vortexDone = done("vortex_introduced") || !!ep.vortex_model_introduced;
+  if (!vortexDone)                 return "Introduce Vortex Model";
+  if (!done("approval_process"))   return "Learn Approval Process";
+  if (!done("moq"))                return "Learn MOQ";
+  if (!done("payment_terms"))      return "Learn Payment Terms";
+  if (!done("decision_maker"))     return "Identify Decision Maker";
+  if (!done("next_step"))          return "Secure Next Step";
+  return "Wrap Up Call";
+}
+
+async function extractLiveDelta({ latestSupplierText, recentContext }) {
+  if (!process.env.CLAUDE_API_KEY) return null;
+  try {
+    const resp = await Promise.race([
+      client.messages.create({
+        model: 'claude-haiku-4-5',
+        max_tokens: 500,
+        system: LIVE_EXTRACT_SYSTEM,
+        messages: [{ role: 'user', content: `Recent context (for reference only):\n${recentContext}\n\nSUPPLIER'S LATEST MESSAGE (extract from this):\n"${latestSupplierText}"` }],
+      }),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('extract timeout')), 9000)),
+    ]);
+    const raw = resp?.content?.[0]?.text?.trim();
+    if (!raw) return null;
+    // ═══ Robust JSON salvage: extract the FIRST balanced JSON object, ignore trailing junk ═══
+    let cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+    let parsed = null;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch (e1) {
+      // Salvage: find first { ... } balanced block
+      const start = cleaned.indexOf("{");
+      if (start >= 0) {
+        let depth = 0, end = -1;
+        for (let i = start; i < cleaned.length; i++) {
+          if (cleaned[i] === "{") depth++;
+          else if (cleaned[i] === "}") { depth--; if (depth === 0) { end = i; break; } }
+        }
+        if (end > start) {
+          try { parsed = JSON.parse(cleaned.slice(start, end + 1)); } catch (e2) { /* give up */ }
+        }
+      }
+    }
+    if (!parsed) { console.error("[extract] unsalvageable output:", raw.slice(0, 120)); return null; }
+    console.log(`[extract] topics: ${Object.entries(parsed.topics || {}).map(([k,v]) => `${k}=${v.state}`).join(", ") || "(none)"}`);
+    return parsed;
+  } catch (e) {
+    console.error('[extract] failed:', e.message);
+    return null;
+  }
+}
+
+// Topic-state store per live session: { topicKey: { state, value } }
+function mergeTopicStates(session, topics) {
+  if (!session || !topics) return;
+  if (!session.topic_states) session.topic_states = {};
+  const RANK = { unknown: 0, partial: 1, complete: 2 };
+  for (const [k, v] of Object.entries(topics)) {
+    if (!v || !v.state) continue;
+    const existing = session.topic_states[k];
+    // Only upgrade, never downgrade (complete stays complete)
+    if (!existing || RANK[v.state] >= RANK[existing.state]) {
+      session.topic_states[k] = { state: v.state, value: v.value || existing?.value || "" };
+    }
+  }
+}
+
 const generateCoachResponse = async ({ callType, memory, transcript, conversationHistory, layer1Context, brief, onDelta, liveSession }) => {
   if (!CLAUDE_COACHING_ENABLED) return null;
-  const systemPromptForCall = COACHING_SYSTEM_PROMPTS[callType];
+  let systemPromptForCall = COACHING_SYSTEM_PROMPTS[callType];
   if (!systemPromptForCall) return null;
+
+  // ═══ FIX 3b: locked-topic patterns for response validation ═══
+  const QN_LOCK_PATTERNS = {
+    amazon_owner:     /who\s+(manages|handles|owns|oversees|is\s+responsible\s+for).{0,20}(amazon|marketplace)/i,
+    satisfaction:     /(satisfied|happy|feel\s+about|how.{0,15}(performing|going)).{0,25}(amazon|channel|marketplace)/i,
+    primary_challenge:/(biggest|main|primary|key)\s+(challenge|gap|issue|concern|pain)/i,
+    approval_process: /(how|what).{0,30}(evaluate|review|approve|vet|assess).{0,25}(partner|account|reseller|wholesale)/i,
+    moq:              /\bmoq\b|minimum\s+order/i,
+    payment_terms:    /payment\s+terms|net\s*\d+\s+terms/i,
+    documentation:    /(what|which)\s+document|documentation.{0,15}(required|needed)/i,
+    decision_maker:   /who.{0,25}(final|decision|approve|sign.?off|go.?ahead)/i,
+    next_step:        /what.{0,15}next\s+step/i,
+  };
+
+  // ═══ FIX 2: Quick Note uses objective-scoped prompt — state engine is authoritative ═══
+  let qnObjective = null;
+  if (callType === "quick_note") {
+    // ═══ Cross-call continuity: seed session from persisted intelligence (once per session) ═══
+    if (liveSession) seedSessionTopicStates(liveSession, memory);
+    const _mergedSC = mergeScorecardForLive(
+      memory?.intelligence_scorecard || {},
+      (liveSession && liveSession.session_scorecard) || {}
+    );
+    const _latestMsg = (conversationHistory || []).slice().reverse().find(m => m.role === "user");
+    const _intent = detectSupplierIntent(_latestMsg?.content || "");
+    const _topicStates = (liveSession && liveSession.topic_states) || {};
+    qnObjective = resolveQNObjective(_topicStates, _intent, _mergedSC);
+    const _locks = computeQuickNoteLocks(_mergedSC);
+    const _lockedBlock = _locks.length
+      ? `\nALREADY KNOWN (NEVER re-ask any of these):\n${_locks.map(l => `  • ${l.label}: ${l.value}`).join("\n")}\n`
+      : "";
+    systemPromptForCall = `${QN_CORE_IDENTITY}
+
+═══ CURRENT OBJECTIVE (set by the workflow engine — this is your ONLY task) ═══
+${QN_OBJECTIVE_BRIEFS[qnObjective] || QN_OBJECTIVE_BRIEFS["Secure Next Step"]}
+${_lockedBlock}
+Pursuing any objective other than the one above is a failure. Do not ask about anything in the ALREADY KNOWN list.`;
+    console.log(`[FIX2] quick_note objective: ${qnObjective}`);
+    if (liveSession) liveSession.last_objective = qnObjective;
+  }
   if (!process.env.CLAUDE_API_KEY || process.env.CLAUDE_API_KEY === 'sk-ant-placeholder') return null;
 
   const memoryBlock = formatMemoryForPrompt(memory);
@@ -912,7 +1185,10 @@ ${bannedLines.length ? `BANNED QUESTIONS THIS TURN:\n${bannedLines.join("\n")}\n
 `;
   }
 
-  const fullSystem = `${VORTEX_PROFILE}\n${TRUTH_RULE}\n${systemPromptForCall}\n${memoryBlock}\n${stageBlock}\n${qnStateBlock}\n${briefBlock}\n${layer1Summary}`;
+  // ═══ Quick Note: CLEAN assembly — QN_CORE_IDENTITY owns identity; no VORTEX_PROFILE/stage/state dilution ═══
+  const fullSystem = (callType === "quick_note")
+    ? `${systemPromptForCall}\n${TRUTH_RULE}\n${memoryBlock}\n${briefBlock}`
+    : `${VORTEX_PROFILE}\n${TRUTH_RULE}\n${systemPromptForCall}\n${memoryBlock}\n${stageBlock}\n${qnStateBlock}\n${briefBlock}\n${layer1Summary}`;
   const recentHistory = (conversationHistory || []).slice(-6)
     .map(m => `${m.role === 'user' ? 'Sanaullah' : 'Supplier'}: ${m.content}`)
     .join('\n');
@@ -972,6 +1248,18 @@ scorecard_delta rules:
     }
     if (!raw || raw.length < 3) return null;
 
+    // ═══ FIX 3c: validator — checks suggestion against locked topics, regenerates once if violated ═══
+    const validateAgainstLocks = (sugg) => {
+      if (callType !== "quick_note" || !liveSession || !sugg) return null;
+      const ts = liveSession.topic_states || {};
+      for (const [topic, pattern] of Object.entries(QN_LOCK_PATTERNS)) {
+        if (ts[topic] && ts[topic].state === "complete" && pattern.test(sugg)) {
+          return topic;
+        }
+      }
+      return null;
+    };
+
     // Try to parse as JSON; fall back to treating it as plain text if Claude ignored the format
     let suggestion = null;
     let scorecard_delta = {};
@@ -989,6 +1277,39 @@ scorecard_delta rules:
     }
 
     if (!suggestion || suggestion.length < 3) return null;
+
+    // ═══ FIX 3d: validate against locked topics — ONE regeneration if violated ═══
+    const _violatedTopic = validateAgainstLocks(suggestion);
+    if (_violatedTopic) {
+      console.warn(`[FIX3] VALIDATOR TRIPPED: suggestion asked about locked topic "${_violatedTopic}". Regenerating once.`);
+      try {
+        const regenResp = await Promise.race([
+          client.messages.create({
+            model: 'claude-haiku-4-5',
+            max_tokens: 400,
+            system: systemPromptForCall + `\n\nCRITICAL CORRECTION: Your previous attempt asked about "${_violatedTopic}" which is ALREADY KNOWN and LOCKED. Generate a response that does NOT ask about ${_violatedTopic} in any form. Pursue your stated objective without touching locked topics.`,
+            messages: [{ role: 'user', content: userMessage }],
+          }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('regen timeout')), 6000)),
+        ]);
+        const regenRaw = regenResp?.content?.[0]?.text?.trim();
+        if (regenRaw) {
+          try {
+            const regenCleaned = regenRaw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+            const regenParsed = JSON.parse(regenCleaned);
+            if (regenParsed.suggestion && !validateAgainstLocks(regenParsed.suggestion)) {
+              suggestion = regenParsed.suggestion.trim();
+              console.log("[FIX3] regeneration successful and clean");
+            }
+          } catch (e) {
+            if (!validateAgainstLocks(regenRaw)) suggestion = regenRaw;
+          }
+        }
+      } catch (e) {
+        console.error("[FIX3] regeneration failed, keeping original:", e.message);
+      }
+    }
+
     console.log(`[Layer 2] Haiku response: ${Date.now() - _t_layer2_start}ms, suggestion=${suggestion.length} chars, delta_sections=${Object.keys(scorecard_delta).length}`);
     return { text: suggestion, scorecard_delta };
   } catch (err) {
@@ -2776,16 +3097,40 @@ app.post("/api/analyze-live", async (req, res) => {
         try { res.write(`data: ${JSON.stringify({ t: chunk })}\n\n`); } catch (e) {}
       } : null;
 
-      const coachResponse = await generateCoachResponse({
-        callType: effectiveCallType,
-        memory,
-        transcript,
-        conversationHistory,
-        layer1Context,
-        brief: req.body.brief,
-        onDelta,
-        liveSession,
-      });
+      // ═══ FIX 1: extraction runs in PARALLEL with suggestion — zero added latency ═══
+      const _latestSupplierMsg = (conversationHistory || []).slice().reverse().find(m => m.role === "user")?.content || transcript || "";
+      const _recentCtx = (conversationHistory || []).slice(-4).map(m => `${m.role === "user" ? "Supplier" : "Rep"}: ${m.content}`).join("\n");
+
+      const [coachResponse, extractResult] = await Promise.all([
+        generateCoachResponse({
+          callType: effectiveCallType,
+          memory,
+          transcript,
+          conversationHistory,
+          layer1Context,
+          brief: req.body.brief,
+          onDelta,
+          liveSession,
+        }),
+        (effectiveCallType === "quick_note" && _latestSupplierMsg)
+          ? extractLiveDelta({ latestSupplierText: _latestSupplierMsg, recentContext: _recentCtx })
+          : Promise.resolve(null),
+      ]);
+
+      // Authoritative merge: dedicated extraction wins
+      if (extractResult && liveSession) {
+        if (extractResult.scorecard_delta) mergeDeltaIntoSession(liveSession, extractResult.scorecard_delta);
+        if (extractResult.topics) mergeTopicStates(liveSession, extractResult.topics);
+      }
+
+      // ═══ FIX 3a: ENGINE marks AI-driven objectives complete (extraction can't see these) ═══
+      if (effectiveCallType === "quick_note" && liveSession && coachResponse) {
+        const _delivered = typeof coachResponse === "object" ? coachResponse.text : coachResponse;
+        if (_delivered && liveSession.last_objective === "Introduce Vortex Model") {
+          mergeTopicStates(liveSession, { vortex_introduced: { state: "complete", value: "delivered" } });
+          console.log("[FIX3] vortex_introduced marked complete by engine");
+        }
+      }
         // ═══ Architecture C: extract suggestion text + merge scorecard delta into live session ═══
         let coachResponseText = null;
         if (coachResponse && typeof coachResponse === "object" && "text" in coachResponse) {
@@ -3732,6 +4077,17 @@ app.post("/api/call-end", async (req, res) => {
       console.log(`[call-end] stage: ${stageResult.stage} — ${stageResult.reason}`);
       // Architecture C: clear live session scratchpad now that we've persisted
       const endSessionId = req.body.session_id;
+      // ═══ Capture topic states BEFORE the session is deleted (cross-call persistence) ═══
+      var _capturedTopicStates = null;
+      try {
+        const _endSess = endSessionId ? liveSessions.get(endSessionId) : null;
+        if (_endSess && _endSess.topic_states) {
+          _capturedTopicStates = {};
+          for (const [k, v] of Object.entries(_endSess.topic_states)) {
+            if (!k.startsWith("__")) _capturedTopicStates[k] = v;
+          }
+        }
+      } catch (e) { console.error("[crosscall] capture error:", e.message); }
       if (endSessionId && liveSessions.has(endSessionId)) {
         liveSessions.delete(endSessionId);
         console.log(`[call-end] cleared live session ${endSessionId}`);
@@ -3749,6 +4105,16 @@ app.post("/api/call-end", async (req, res) => {
         };
       }
     }
+
+    // ═══ Cross-call continuity: persist captured topic states ═══
+    try {
+      if (typeof _capturedTopicStates !== "undefined" && _capturedTopicStates && Object.keys(_capturedTopicStates).length > 0) {
+        // Merge with previously persisted states (never lose old intelligence)
+        const _prior = (supplier && supplier.qn_topic_states) || {};
+        supplierUpdate.qn_topic_states = { ..._prior, ..._capturedTopicStates };
+        console.log(`[crosscall] persisting topic states: ${Object.keys(supplierUpdate.qn_topic_states).join(", ")}`);
+      }
+    } catch (e) { console.error("[crosscall] persist error:", e.message); }
 
     const { data: updated, error } = await supabase
       .from("supplier_memory")
@@ -4206,6 +4572,312 @@ app.get("/api/dashboard/kpis", async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// VORTEX AI COACH — Phase 1 (one brain, second interface)
+// ═══════════════════════════════════════════════════════════════
+
+const COACH_MODES = ["live_call", "email", "whatsapp", "negotiation", "strategy"];
+
+const COACH_SYSTEM_BASE = `You are the Vortex AI Coach — an experienced wholesale advisor sitting beside Sanaullah (founder of Vortex Origin Brands) during supplier relationships. You are a specialist in: Amazon wholesale, supplier outreach, distributor applications, retail/wholesale inquiries, Brand Registry opportunities, Quick Note workflow, supplier objections, marketplace restrictions, MAP policies, and approval processes.
+
+YOUR REASONING MODEL (run silently before every answer):
+1. What is the supplier actually saying?
+2. Why are they saying it?
+3. What concern or risk exists?
+4. What objective should Sanaullah pursue?
+5. What should Sanaullah say — and avoid saying?
+
+RESPONSE STYLE:
+Talk like a senior wholesale advisor — natural language, direct, specific. NO rigid templates. NO JSON. NO field-by-field forms. NO workflow jargon.
+
+When the user shares supplier communication, your answer should naturally weave in: what the supplier actually means, whether it's a hard wall or soft objection, the risk and the opportunity, what you'd say back (concrete, ready to use), what to avoid, and where to take the relationship next. But deliver it as an advisor talking — flowing prose with occasional emphasis, not labeled sections. Use a short list or a drafted reply block ONLY when it genuinely improves clarity (e.g. when they ask you to draft an email, show the email).
+
+Length discipline: match depth to the question. A quick question gets a tight answer. A pasted negotiation gets fuller treatment. Never pad.
+
+RULES:
+- Ground every answer in the supplier's actual memory and history provided below. Never invent facts about the supplier.
+- If the supplier memory lacks something important, say so and suggest how to learn it.
+- Respect workflow positioning absolutely (provided below). Never position Vortex as agency/consultant in Quick Note or wholesale contexts.
+- Keep recommended responses in Sanaullah's voice: professional, confident, relationship-first.`;
+
+const COACH_MODE_NOTES = {
+  live_call: "MODE: LIVE CALL PREP/DEBRIEF — focus on spoken-conversation tactics, tonality, call structure, objection handling in real time.",
+  email: "MODE: EMAIL — recommended responses should be complete, ready-to-send emails with subject lines when drafting fresh outreach.",
+  whatsapp: "MODE: WHATSAPP — recommended responses should be short, casual-professional messages. No email formality.",
+  negotiation: "MODE: NEGOTIATION — focus on leverage, concessions, anchoring, and protecting margin/terms. Flag risks aggressively.",
+  strategy: "MODE: STRATEGY — bigger-picture relationship planning, sequencing, prioritization.",
+};
+
+// Workflow-scoped identity (Weakness 1 fix: no global VORTEX_PROFILE contamination)
+const COACH_QN_ADVISOR = `═══ VORTEX QUICK NOTE COACH ═══
+You are NOT the supplier. You are NOT the salesperson. You are Sanaullah's SENIOR ADVISOR during Quick Note conversations.
+
+QUICK NOTE PURPOSE
+Quick Note is a discovery conversation. The goal is to understand the supplier's world.
+The goal is NOT: to pitch Vortex · to prove Amazon problems exist · to prove Vortex is valuable · to criticize agencies · to create urgency.
+A successful Quick Note ends with: "I understand their business better than I did 10 minutes ago."
+
+CORE RULES
+1. Follow the supplier's reality. The supplier's LAST statement is more important than any Amazon observation.
+2. Discovery before positioning. Never discuss Vortex until you understand: the challenge → the impact → the current approach → whether a meaningful gap exists.
+3. Never manufacture pain. If Amazon is not a priority and no meaningful gap exists, accept that.
+4. The first problem discussed is rarely the real problem. Keep digging.
+5. The supplier should talk more than Sanaullah.
+6. Replace judgments with observations. Replace conclusions with curiosity. Replace diagnoses with questions.
+7. Do not attack agencies, distributors, or current partners.
+8. Interest is not commitment. Curiosity is not a deal.
+
+COACH DEFAULT OUTPUT
+For every supplier statement, respond naturally covering:
+1. What the supplier is telling you. 2. Why it matters. 3. Current discovery stage. 4. Recommended next objective. 5. Suggested next question.
+Keep it conversational prose, tight — not a labeled form.
+DO NOT generate exact scripts by default. Only give exact wording when Sanaullah explicitly asks ("What should I say?" / "Give me a response." / "Write the answer.") — OR when in LIVE CALL MODE, which is always an explicit request for the words to say.
+
+VORTEX POSITIONING
+PRIMARY: wholesale purchasing partner · inventory buyer · long-term supplier relationship.
+SECONDARY: Amazon marketplace expertise · content improvements · PPC · Brand Store · marketplace strategy.
+Never position Vortex as an agency. Never use service language ("we optimize your listings", "we run your PPC") — frame capabilities as how Vortex grows its own investment in brands it carries.
+Maximum 2-3 observations in any opening — more sounds like an audit.
+
+PARTNERSHIP STRUCTURES
+Do not assume every supplier wants the same relationship. Possible outcomes:
+1. Approved seller alongside existing partners. 2. Small test relationship. 3. Strategic marketplace partner. 4. Larger long-term relationship.
+Trust is earned progressively. The objective is discovering which structure fits — never forcing the largest. Most brands think "try a few SKUs and see," and that is a win.
+
+TRUTH RULE
+Never invent: portfolio · references · case studies · partnerships · experience.
+If Vortex is new: say so. Credibility comes from honesty, professionalism, capital commitment, starting small, and execution.
+
+FINAL CHECK (before every recommendation)
+"Am I trying to understand the supplier, or am I trying to prove something?"
+If proving: return to discovery. If understanding: continue.`;
+
+function coachIdentityForWorkflow(workflow) {
+  if (workflow === "quick_note") {
+    return `POSITIONING (Quick Note): Vortex Origin Brands is a wholesale-focused Amazon partner. We purchase inventory directly from brands and help maintain an organized, consistent presence on Amazon: improving listings, supporting brand protection, and investing in advertising using our own capital. Some partners prefer full channel management; others work with us alongside a small group of approved sellers. We adapt to the brand's long-term strategy. Wholesale relationship first; capabilities second. NEVER agency/consultant positioning.`;
+  }
+  return VORTEX_PROFILE;
+}
+
+function summarizeCallsForCoach(calls) {
+  if (!calls || !calls.length) return "(no call history)";
+  return calls.slice(0, 3).map(c => {
+    const date = (c.call_date || c.created_at || "").slice(0, 10);
+    const summary = c.call_summary || c.summary || "(no summary)";
+    return `[${date}] ${String(summary).slice(0, 400)}`;
+  }).join("\n");
+}
+
+async function assembleCoachContext(thread) {
+  let supplier = null, calls = [], followUps = [];
+  if (thread.supplier_id) {
+    const [supRes, callRes, fuRes] = await Promise.all([
+      supabase.from("supplier_memory").select("*").eq("id", thread.supplier_id).single(),
+      supabase.from("call_history").select("*").eq("supplier_id", thread.supplier_id).order("created_at", { ascending: false }).limit(3),
+      supabase.from("follow_ups").select("*").eq("supplier_id", thread.supplier_id).eq("status", "pending").limit(5),
+    ]);
+    supplier = supRes.data || null;
+    calls = callRes.data || [];
+    followUps = fuRes.data || [];
+  }
+
+  const workflow = thread.workflow_override || supplier?.primary_workflow || "strategy_general";
+  let workflowKnowledge = (workflow === "quick_note")
+    ? COACH_QN_ADVISOR
+    : (COACHING_SYSTEM_PROMPTS[workflow] || "(general advisory — no specific workflow)");
+  // Strip live-call OUTPUT FORMAT / JSON instructions — Coach is natural language only
+  workflowKnowledge = workflowKnowledge
+    .replace(/═+\s*\nOUTPUT FORMAT[\s\S]*?(?=═{10,}|$)/gi, "")
+    .replace(/OUTPUT FORMAT[^\n]*\n(?:[^═]*?)(?=\n═|$)/gi, "")
+    .replace(/\{\s*"suggestion"[\s\S]*?\}/g, "");
+
+  const supplierBlock = supplier ? `
+═══ SUPPLIER: ${supplier.company_name} ═══
+Category: ${supplier.supplier_category || "?"} | Stage: ${supplier.relationship_stage || "?"} | Trust: ${supplier.trust_score ?? "?"} | Calls: ${supplier.total_calls_count ?? 0}
+Workflow: ${workflow}
+Summary: ${supplier.relationship_summary || "(none)"}
+Known objections: ${JSON.stringify(supplier.known_objections || [])}
+Known restrictions: ${JSON.stringify(supplier.known_restrictions || [])}
+Open questions: ${JSON.stringify(supplier.open_questions || [])}
+Intelligence scorecard: ${JSON.stringify(supplier.intelligence_scorecard || {})}
+Topic states (what is already KNOWN — never suggest re-asking these): ${JSON.stringify(supplier.qn_topic_states || {})}
+
+RECENT CALLS:
+${summarizeCallsForCoach(calls)}
+
+PENDING FOLLOW-UPS:
+${followUps.length ? followUps.map(f => `• ${f.description || f.title || JSON.stringify(f).slice(0, 100)}`).join("\n") : "(none)"}` : "\n(General thread — no specific supplier attached)";
+
+  const modeNote = COACH_MODE_NOTES[thread.mode] || COACH_MODE_NOTES.strategy;
+
+  return `${COACH_SYSTEM_BASE}
+
+${modeNote}
+
+${TRUTH_RULE}
+
+${coachIdentityForWorkflow(workflow)}
+
+═══ WORKFLOW KNOWLEDGE ═══
+${workflowKnowledge}
+${supplierBlock}${thread.thread_summary ? `\n\n═══ EARLIER IN THIS THREAD ═══\n${thread.thread_summary}` : ""}
+
+═══ FINAL OVERRIDE (highest priority) ═══
+The workflow knowledge above may contain output-format or JSON instructions intended for a different system. IGNORE all of them. You respond ONLY in natural advisor language. Never output JSON, never use "suggestion" or "scorecard_delta" keys, never wrap your answer in any structure. Plain conversational text only.`;
+}
+
+// ── Endpoints ──
+app.get("/api/coach/threads", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("coach_threads")
+      .select("*, supplier_memory(company_name, primary_workflow)")
+      .order("updated_at", { ascending: false })
+      .limit(100);
+    if (error) throw error;
+    res.json({ threads: data || [] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/coach/threads", async (req, res) => {
+  try {
+    const { supplier_id, thread_name, mode, workflow_override } = req.body;
+    const insert = {
+      supplier_id: supplier_id || null,
+      thread_name: (thread_name || "New Thread").slice(0, 120),
+      mode: COACH_MODES.includes(mode) ? mode : "strategy",
+      workflow_override: workflow_override || null,
+    };
+    const { data, error } = await supabase.from("coach_threads").insert(insert).select().single();
+    if (error) throw error;
+    res.json({ thread: data });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/api/coach/threads/:id/messages", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("coach_messages")
+      .select("*")
+      .eq("thread_id", req.params.id)
+      .order("created_at", { ascending: true })
+      .limit(200);
+    if (error) throw error;
+    res.json({ messages: data || [] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/coach/threads/:id/messages", async (req, res) => {
+  try {
+    const threadId = req.params.id;
+    const userContent = (req.body.content || "").trim();
+    if (!userContent) return res.status(400).json({ error: "content required" });
+
+    const { data: thread, error: tErr } = await supabase.from("coach_threads").select("*").eq("id", threadId).single();
+    if (tErr || !thread) return res.status(404).json({ error: "thread not found" });
+
+    // Save user message
+    await supabase.from("coach_messages").insert({ thread_id: threadId, role: "user", content: userContent });
+
+    // Load last 20 messages for context
+    const { data: history } = await supabase
+      .from("coach_messages")
+      .select("role, content")
+      .eq("thread_id", threadId)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    const chatHistory = (history || []).reverse();
+
+    let systemPrompt = await assembleCoachContext(thread);
+
+    // ═══ LIVE CALL MODE: brevity + say-now focus ═══
+    const isLive = req.body.live === true;
+    if (isLive) {
+      systemPrompt += `\n\n═══ LIVE CALL MODE (overrides length guidance) ═══\nSanaullah is ON A LIVE CALL right now. The supplier just spoke. Respond with EXACTLY what Sanaullah should say next — 1-3 sentences, natural spoken language, ready to say out loud. No analysis, no explanation, no options, no email drafts. Just the words to say. If something critical must be flagged, add ONE short line starting with "⚠" after the response.`;
+    }
+
+    // ═══ SSE streaming opt-in ═══
+    const coachWantsStream = req.body.stream === true;
+    if (coachWantsStream && !res.headersSent) {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+      });
+    }
+
+    let reply = null;
+    if (coachWantsStream) {
+      // Live mode: wrap the latest user turn with an inline brevity directive (final-turn instructions dominate)
+      let streamMessages = chatHistory.map(m => ({ role: m.role, content: m.content }));
+      if (isLive && streamMessages.length) {
+        const last = streamMessages[streamMessages.length - 1];
+        if (last.role === "user") {
+          last.content = `[LIVE CALL — supplier just said:] "${last.content}"\n\nGive me ONLY the words to say back. 1-3 spoken sentences. No headers, no bold, no analysis, no lists, no email format. Ignore the format of earlier messages in this thread. Just speakable words.`;
+        }
+      }
+      const stream = client.messages.stream({
+        model: "claude-sonnet-4-5",
+        max_tokens: isLive ? 200 : 1500,
+        system: systemPrompt,
+        messages: streamMessages,
+      });
+      stream.on('text', (t) => {
+        try { res.write(`data: ${JSON.stringify({ t })}\n\n`); } catch (e) {}
+      });
+      const finalMsg = await Promise.race([
+        stream.finalMessage(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("coach stream timeout")), 45000)),
+      ]);
+      reply = finalMsg?.content?.[0]?.text?.trim() || "(no response generated)";
+    } else {
+      const resp = await Promise.race([
+        client.messages.create({
+          model: "claude-sonnet-4-5",
+          max_tokens: isLive ? 300 : 1500,
+          system: systemPrompt,
+          messages: chatHistory.map(m => ({ role: m.role, content: m.content })),
+        }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("coach timeout")), 30000)),
+      ]);
+      reply = resp?.content?.[0]?.text?.trim() || "(no response generated)";
+    }
+    // Safety net: unwrap JSON if the model ever regresses to live-call format
+    if (reply.startsWith("{") || reply.startsWith("```")) {
+      try {
+        const stripped = reply.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+        const maybe = JSON.parse(stripped);
+        if (maybe && typeof maybe.suggestion === "string") reply = maybe.suggestion;
+      } catch (e) { /* not JSON — keep as is */ }
+    }
+
+    // Save assistant message + touch thread
+    await supabase.from("coach_messages").insert({ thread_id: threadId, role: "assistant", content: reply });
+    await supabase.from("coach_threads").update({ updated_at: new Date().toISOString() }).eq("id", threadId);
+
+    if (coachWantsStream && res.headersSent) {
+      try {
+        res.write(`data: ${JSON.stringify({ final: { reply } })}\n\n`);
+        res.end();
+      } catch (e) { console.error("[coach] SSE final error:", e.message); }
+    } else {
+      res.json({ reply });
+    }
+  } catch (e) {
+    console.error("[coach] message error:", e.message);
+    if (res.headersSent) {
+      // SSE already started — send error as an event and close, never set headers again
+      try {
+        res.write(`data: ${JSON.stringify({ final: { reply: "⚠ " + e.message } })}\n\n`);
+        res.end();
+      } catch (e2) { try { res.end(); } catch (e3) {} }
+    } else {
+      res.status(500).json({ error: e.message });
+    }
   }
 });
 
