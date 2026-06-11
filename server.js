@@ -686,6 +686,19 @@ QN-27 — DIRECT WHOLESALE OBJECTIVE
 Never hide the business objective. If asked "Are you trying to open an account?" / "What are you ultimately looking for?":
 Answer DIRECTLY: "Ultimately, yes. We're determining whether there's a fit for a direct wholesale purchasing relationship and understanding what your onboarding process looks like."
 
+QN-28 — OBSERVATION MUST CONNECT TO QUESTION
+The validation question following an observation must logically flow FROM that observation. Never pair an observation with an unrelated question.
+  ✓ "I noticed multiple sellers on your listings" → "How does your team currently manage marketplace representation?"
+  ✓ "I noticed pricing variation across sellers" → "How do you typically approach pricing consistency?"
+  ✓ "Your Brand Store appears underutilized" → "How important is the Brand Store within your strategy?"
+  ✗ "I noticed multiple sellers" → "How satisfied are you with Amazon?" (no connection)
+
+QN-29 — NO EXCESSIVE ECHO
+Do NOT summarize every learned data point before each new question.
+  ✗ BAD: "So you need a resale certificate, verification, 1-3 week timeline, and a review process... what payment terms do you offer?"
+  ✓ GOOD: "That's helpful. What payment terms do new partners typically start with?"
+Brief acknowledgment only: "That's helpful." / "Understood." / "That makes sense." Then move forward.
+
 ═══════════════════════════════════════════════════════════════
 HARD RULES
 ═══════════════════════════════════════════════════════════════
@@ -840,6 +853,22 @@ ${brief.trim()}
     if (f.observation_validated)   bannedLines.push(`  \u2717 Are these observations accurate? (already answered)`);
     if (f.satisfaction_known)      bannedLines.push(`  \u2717 Are you satisfied with Amazon? (already answered)`);
     if (f.primary_challenge_known) bannedLines.push(`  \u2717 What's your biggest Amazon challenge? (already answered)`);
+
+    // ═══ CLOSED INTELLIGENCE LOCK — qualification fields ═══
+    const _cr = _qnScorecard.commercial_terms || {};
+    const _ar = _qnScorecard.account_requirements || {};
+    const _sh2 = _qnScorecard.stakeholders || {};
+    const _ep2 = _qnScorecard.evaluation_process || {};
+    if (_cr.approval_timeline)  bannedLines.push(`  \u2717 How long does approval take? (LOCKED: ${_cr.approval_timeline})`);
+    if (_cr.moq)                bannedLines.push(`  \u2717 What are your MOQ requirements? (LOCKED: ${_cr.moq})`);
+    if (_cr.payment_terms)      bannedLines.push(`  \u2717 What payment terms do you require? (LOCKED: ${_cr.payment_terms})`);
+    if (_cr.net_terms)          bannedLines.push(`  \u2717 What net terms do you offer? (LOCKED: ${_cr.net_terms})`);
+    if (_ar.authorized_reseller_policy) bannedLines.push(`  \u2717 Do you have an authorized reseller policy? (LOCKED)`);
+    if (_ar.reseller_certificate_required !== undefined || _ar.ein_required !== undefined || _ar.credit_application_required !== undefined || _ar.wholesale_agreement_required !== undefined) {
+      bannedLines.push(`  \u2717 What documentation is required? (LOCKED: docs already specified)`);
+    }
+    if (_sh2.primary_decision_maker) bannedLines.push(`  \u2717 Who makes the final decision? (LOCKED: ${_sh2.primary_decision_maker})`);
+    if (_ep2.next_step)         bannedLines.push(`  \u2717 What should the next step be? (LOCKED: ${_ep2.next_step})`);
 
     let nextActionLine = "";
     if (f.transition_required) {
