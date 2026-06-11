@@ -4810,6 +4810,7 @@ app.post("/api/coach/threads/:id/messages", async (req, res) => {
       });
     }
 
+    console.log(`[coach-diag] thread=${thread.thread_name} live=${isLive} stream=${coachWantsStream} workflow=${thread.workflow_override || "inherit"} sysLen=${systemPrompt.length} hasQNDoctrine=${systemPrompt.includes("VORTEX QUICK NOTE COACH")} hasLiveMode=${systemPrompt.includes("LIVE CALL MODE")}`);
     let reply = null;
     if (coachWantsStream) {
       // Live mode: wrap the latest user turn with an inline brevity directive (final-turn instructions dominate)
