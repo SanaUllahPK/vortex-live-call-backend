@@ -4044,11 +4044,16 @@ app.patch("/api/suppliers/:id", async (req, res) => {
       "relationship_stage", "relationship_summary",
       "contact_name", "contact_email", "contact_phone",
       "open_questions", "known_objections", "known_restrictions",
-      "next_follow_up_date",
+      "next_follow_up_date", "primary_workflow",
     ];
     const updates = {};
     for (const k of allowedFields) {
       if (k in req.body) updates[k] = req.body[k];
+    }
+    // Validate primary_workflow against allowed set
+    if ("primary_workflow" in updates) {
+      const WF_OK = ["brand_registry", "distributor_inquiry", "retail_inquiry", "quick_note", "wholesale_inquiry"];
+      if (!WF_OK.includes(updates.primary_workflow)) delete updates.primary_workflow;
     }
     if (updates.company_name) {
       updates.normalized_name = updates.company_name.trim().toLowerCase();
